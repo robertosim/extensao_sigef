@@ -1,6 +1,6 @@
 # Sigef Extractor & Downloader 🚀
 
-Uma extensão profissional para o Google Chrome (**Manifest V3**) desenvolvida para automatizar a busca, raspagem de dados cadastrais e download em lote de documentos georreferenciados diretamente da consulta pública de parcelas do **SIGEF (INCRA)**.
+Uma extensão para o Google Chrome (**Manifest V3**) desenvolvida para automatizar a busca, raspagem de dados cadastrais e download em lote de documentos georreferenciados diretamente da consulta pública de parcelas do **SIGEF (INCRA)**.
 
 ---
 
