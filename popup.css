@@ -1,0 +1,158 @@
+/**
+ * ============================================================================
+ * EXTENSÃO: SIGEF EXTRACTOR & DOWNLOADER
+ * ARQUIVO: popup.css
+ * ============================================================================
+ * DESCRIÇÃO:
+ * Estilização completa e identidade visual do painel popup da extensão.
+ */
+
+/* Configurações básicas de dimensões da janela e tipografia padrão do corpo (body) */
+body { 
+    width: 320px; /* Força uma largura fixa ideal para caixas de extensões do Chrome */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Fonte limpa e moderna */
+    padding: 15px; /* Espaçamento interno de segurança */
+    background: #f4f7f6; /* Cor de fundo num tom cinza-esverdeado suave */
+    margin: 0; /* Remove margens residuais nativas do navegador */
+}
+
+/* Caixa tipo cartão que envolve e destaca o conteúdo do painel */
+.card { 
+    background: white; /* Fundo totalmente branco para dar contraste */
+    padding: 20px; /* Distanciamento generoso entre as bordas e os textos */
+    border-radius: 12px; /* Cantos arredondados modernos */
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1); /* Sombra difusa leve para criar efeito de elevação 3D */
+}
+
+/* Formatação do cabeçalho principal */
+h2 { 
+    font-size: 16px; /* Tamanho discreto e legível */
+    color: #2c3e50; /* Tom azul-escuro corporativo */
+    text-align: center; /* Centraliza o título */
+    margin: 0 0 15px 0; /* Margem inferior para afastar o conteúdo abaixo */
+    border-bottom: 1px solid #eee; /* Linha divisória cinza muito clara */
+    padding-bottom: 10px; /* Distância entre o texto e a linha divisória */
+}
+
+/* Caixa organizadora de botões dispostos lado a lado */
+.btn-box { 
+    display: flex; /* Alinhamento flexível em linha */
+    gap: 8px; /* Espaço exato de separação entre os botões adjacentes */
+    margin-top: 15px; /* Afastamento superior */
+}
+
+/* Estilização estrutural básica para todos os botões da aplicação */
+button { 
+    flex: 1; /* Faz com que todos os botões dividam o espaço da linha igualmente */
+    padding: 12px; /* Aumenta a área de clique */
+    border: none; /* Remove contornos estéticos nativos feios */
+    border-radius: 8px; /* Arredondamento suave nos cantos */
+    cursor: pointer; /* Transforma o cursor em "mãozinha" indicando clique */
+    font-weight: bold; /* Destaca o texto interno em negrito */
+    font-size: 12px; /* Tamanho padrão de texto */
+    transition: 0.3s; /* Aplica efeito suave de transição de cor em animações */
+}
+
+/* Cores específicas de identidade para cada tipo de botão de ação */
+#extractBtn { background: #6f42c1; color: white; } /* Roxo para Extração */
+#downloadBtn { background: #007bff; color: white; } /* Azul para Downloads */
+#pauseBtn { background: #f1c40f; color: #2c3e50; } /* Amarelo com texto escuro para Pausa */
+#stopBtn { background: #e74c3c; color: white; } /* Vermelho para Cancelamento */
+
+/* Efeito ativado instantaneamente quando o utilizador passa o rato por cima de qualquer botão */
+button:hover { 
+    opacity: 0.8; /* Reduz ligeiramente a opacidade criando um feedback visual de foco */
+    transform: translateY(-1px); /* Move o botão 1 pixel para cima simulando flutuação */
+}
+
+/* Calha / Fundo estático cinza da barra de progresso */
+.progress-bg { 
+    background: #ecf0f1; /* Cor cinza clara */
+    height: 14px; /* Altura da barra */
+    border-radius: 7px; /* Cantos totalmente arredondados */
+    margin: 10px 0 6px 0; /* Margens de distanciamento vertical */
+    overflow: hidden; /* Garante que o preenchimento interno respeite as bordas arredondadas */
+}
+
+/* Preenchimento ativo (Verde) da barra de progresso, controlado dinamicamente via JS */
+.progress-fill { 
+    background: #2ecc71; /* Tom verde esmeralda vibrante */
+    height: 100%; /* Ocupa toda a altura disponível da calha pai */
+    width: 0%; /* Inicia zerada; cresce dinamicamente de 0% a 100% */
+    transition: width 0.5s ease; /* Transição animada suave quando a percentagem expande */
+}
+
+/* Exibição textual da percentagem numérica */
+#percentage { 
+    font-size: 13px;
+    text-align: center;
+    color: #27ae60; /* Verde escuro para melhor contraste e leitura */
+    font-weight: 700; /* Texto em negrito bem marcado */
+    margin-bottom: 10px;
+}
+
+/* Texto de contagem geral da fila */
+#status { 
+    font-size: 13px;
+    text-align: center;
+    color: #7f8c8d; /* Cinza médio clássico */
+    font-weight: 600;
+}
+
+/* Descrição detalhada e dinâmica da subtarefa atual */
+#current { 
+    font-size: 11px;
+    text-align: center;
+    color: #34495e; /* Azul acinzentado escuro */
+    margin-top: 8px;
+    display: block; /* Garante que o span se comporte como bloco ocupando uma linha dedicada */
+    line-height: 1.35; /* Ajusta espaçamento entre linhas */
+    max-height: 3.2em; /* Limita a altura máxima a aproximadamente 3 linhas */
+    overflow: hidden; /* Corta e oculta textos que extrapolem o limite físico da caixa */
+}
+
+/* --- ESTILOS EXCLUSIVOS DO NOVO RODAPÉ DE SUPORTE --- */
+footer {
+    margin-top: 20px; /* Afasta o rodapé da seção operacional superior */
+    padding-top: 12px; /* Espaço entre a linha decorativa e os textos do footer */
+    border-top: 1px solid #eee; /* Linha fina divisória superior */
+    text-align: center; /* Centraliza todas as linhas de texto do footer */
+    font-size: 11px; /* Letra reduzida típica de informações de rodapé */
+    color: #7f8c8d; /* Cor cinza sóbria */
+}
+
+/* Formatação do texto de direitos autorais */
+.footer-copyright {
+    font-weight: bold; /* Destaca a autoria do Roberto Simões */
+    margin-bottom: 8px; /* Distância para a linha de links abaixo */
+    color: #2c3e50; /* Tom escuro elegante */
+}
+
+/* Alinhamento flexível para os links de suporte lado a lado */
+.footer-links {
+    display: flex;
+    justify-content: center; /* Centraliza horizontalmente o bloco de links */
+    gap: 15px; /* Espaço equidistante de 15px entre cada canal de contacto */
+}
+
+/* Configuração de comportamento padrão para os hiperlinks (A) do rodapé */
+.footer-links a {
+    display: flex; /* Faz com que o ícone e o texto se alinhem perfeitamente */
+    align-items: center; /* Centraliza verticalmente o ícone SVG com o texto do link */
+    gap: 4px; /* Espaço fino entre o mini ícone SVG e a palavra descritiva */
+    color: #34495e; /* Cor padrão do link */
+    text-decoration: none; /* Remove o sublinhado estático clássico de links */
+    transition: color 0.2s; /* Transição de cor suave ao passar o rato */
+}
+
+/* Feedback visual quando o utilizador passa o rato sobre o link de e-mail ou whatsapp */
+.footer-links a:hover {
+    color: #007bff; /* Altera a cor para o azul padrão web de links ativos */
+}
+
+/* Configura as dimensões físicas dos ícones vetoriais embutidos no rodapé */
+.footer-links svg {
+    width: 14px; /* Largura pequena proporcional ao texto */
+    height: 14px; /* Altura equivalente mantendo proporção de quadrado (1:1) */
+    fill: currentColor; /* Inteligente: faz o SVG herdar e usar a mesma cor do texto definido no CSS (CSS color) */
+}

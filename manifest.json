@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Sigef Extractor & Downloader",
+  "version": "2.2",
+  "permissions": [
+    "downloads",
+    "tabs",
+    "scripting",
+    "storage",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "https://sigef.incra.gov.br/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

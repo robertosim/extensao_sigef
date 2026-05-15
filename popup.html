@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Sigef Extractor & Downloader</title>
+    
+    <link rel="stylesheet" type="text/css" href="popup.css">
+</head>
+<body>
+    <div class="card">
+        
+        <h2>Sigef Extractor & Downloader</h2>
+        
+        <div id="setupView">
+            <input type="file" id="csvFile" accept=".csv" style="width:100%; font-size: 12px;">
+            
+            <div id="setupButtons" class="btn-box" style="display: none;">
+                <button id="extractBtn">EXTRAIR DADOS</button>
+                <button id="downloadBtn">DOWNLOAD PDF</button>
+            </div>
+        </div>
+
+        <div id="processView" style="display: none;">
+            <div id="status">Preparando fila...</div>
+            
+            <div class="progress-bg">
+                <div id="bar" class="progress-fill"></div>
+            </div>
+            
+            <div id="percentage">0%</div>
+            
+            <span id="current">...</span>
+            
+            <div class="btn-box">
+                <button id="pauseBtn">Pausar</button>
+                <button id="stopBtn">Cancelar</button>
+            </div>
+        </div>
+
+        <footer>
+            <div class="footer-copyright">Copyright © 2026 - Roberto Simões</div>
+            
+            <div class="footer-links">
+                <a href="mailto:robsimoes@gmail.com" title="Enviar E-mail">
+                    <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+                    E-mail
+                </a>
+                
+                <a href="https://wa.me/5548996793828" target="_blank" title="Chamar no WhatsApp">
+                    <svg viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397 0 12.008 0c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 12.004-11.95 12.004-.003 0-.005 0-.007 0-2.012-.001-3.996-.51-5.741-1.479L0 24zm6.262-3.822c1.7.996 3.3.15 5.148.151 5.4 0 9.79-4.386 9.793-9.775.002-2.61-1.01-5.064-2.853-6.91C16.505 1.791 14.054 1.78 11.448 1.78c-5.4 0-9.79 4.387-9.793 9.777-.001 2.103.543 4.154 1.576 5.955L2.245 21.8l4.074-1.068z"/></svg>
+                    WhatsApp
+                </a>
+            </div>
+        </footer>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>
