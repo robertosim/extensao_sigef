@@ -27,6 +27,7 @@ Uma extensão para o Google Chrome (**Manifest V3**) desenvolvida para automatiz
 ```
 ---
 ## 🛠️ Como Instalar no Modo Desenvolvedor
+Como Instalar no Modo Desenvolvedor
 Faça o download ou clone este repositório no seu computador.
 
 Abra o Google Chrome e acesse o endereço: chrome://extensions/.
