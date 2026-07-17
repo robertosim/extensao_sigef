@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "SIGEF Extractor & Downloader",
+  "version": "2.0",
+  "permissions": [
+    "downloads",
+    "tabs",
+    "scripting",
+    "activeTab",
+    "storage",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "https://sigef.incra.gov.br/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://sigef.incra.gov.br/geo/parcela/detalhe/*"],
+      "js": ["content.js"]
+    }
+  ]
+}

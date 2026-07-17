@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { width: 400px; font-family: 'Segoe UI', sans-serif; padding: 15px; background: #f4f4f9; }
+        .card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h3 { margin-top: 0; text-align: center; color: #333; }
+
+        .tabs { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 15px; }
+        .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; font-weight: bold; font-size: 13px; color: #888; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+        .tab:hover { color: #555; }
+        .tab.active { color: #007bff; border-bottom-color: #007bff; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        #process-section { display: none; }
+
+        .section-title { font-weight: bold; font-size: 13px; color: #333; margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #ddd; }
+        label { font-weight: bold; font-size: 13px; color: #555; display: block; margin-bottom: 5px; }
+        textarea { width: 100%; height: 100px; border: 1px solid #ccc; border-radius: 5px; padding: 8px; font-size: 13px; resize: vertical; box-sizing: border-box; font-family: 'Consolas', monospace; }
+
+        .radio-group { margin: 8px 0; display: flex; gap: 15px; justify-content: center; }
+        .radio-group label { font-weight: normal; font-size: 13px; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+        .radio-group input[type="radio"],
+        .radio-group input[type="checkbox"] { cursor: pointer; }
+
+        input[type="file"] { width: 100%; font-size: 12px; margin: 6px 0; }
+
+        .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+        button { flex: 1; padding: 10px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 13px; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-pause { background: #ffc107; color: #333; }
+        .btn-stop { background: #dc3545; color: white; }
+
+        .progress-container { background: #eee; border-radius: 10px; height: 20px; width: 100%; margin: 15px 0 8px; overflow: hidden; }
+        .progress-bar { background: #007bff; height: 100%; width: 0%; transition: width 0.3s; }
+
+        #current-item { color: #007bff; display: block; text-align: center; font-size: 13px; margin: 10px 0 5px; font-weight: bold; }
+        #status-count { text-align: center; font-size: 12px; color: #666; }
+        #status-detail { text-align: center; font-size: 11px; color: #888; margin-top: 4px; }
+
+        .footer { text-align: center; font-size: 11px; color: #999; margin-top: 14px; padding-top: 10px; border-top: 1px solid #eee; }
+        .footer a { color: #007bff; text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h3>SIGEF Extractor & Downloader</h3>
+
+        <!-- Abas -->
+        <div class="tabs">
+            <div class="tab active" data-tab="extract">Extracao</div>
+            <div class="tab" data-tab="download">Download</div>
+        </div>
+
+        <!-- Conteudo Aba Extracao -->
+        <div id="tab-extract" class="tab-content active">
+            <label for="dataInput">Codigo, CPF ou CNPJ (um por linha):</label>
+            <textarea id="dataInput" placeholder="8070100031237&#10;84617284915&#10;25372342000163"></textarea>
+
+            <div class="radio-group">
+                <label><input type="radio" name="dataType" value="codigo" checked> Codigo</label>
+                <label><input type="radio" name="dataType" value="cpf"> CPF</label>
+                <label><input type="radio" name="dataType" value="cnpj"> CNPJ</label>
+            </div>
+
+            <div class="btn-row">
+                <button id="extractBtn" class="btn-primary">EXTRAIR DADOS</button>
+            </div>
+        </div>
+
+        <!-- Conteudo Aba Download -->
+        <div id="tab-download" class="tab-content">
+            <label for="csvFile">Arquivo CSV das parcelas (nome;uuid;...):</label>
+            <input type="file" id="csvFile" accept=".csv">
+
+            <div class="radio-group">
+                <label><input type="checkbox" id="chkPdf"> PDF</label>
+                <label><input type="checkbox" id="chkCsv"> CSV</label>
+                <label><input type="checkbox" id="chkShp"> SHP</label>
+            </div>
+
+            <div class="btn-row">
+                <button id="downloadBtn" class="btn-primary">INICIAR DOWNLOAD</button>
+            </div>
+        </div>
+
+        <!-- Secao de Progresso -->
+        <div id="process-section">
+            <div class="progress-container">
+                <div id="pb" class="progress-bar"></div>
+            </div>
+            <div id="status-count">0 / 0 (0%)</div>
+            <span id="current-item">---</span>
+            <div id="status-detail"></div>
+
+            <div class="btn-row">
+                <button id="pauseBtn" class="btn-pause">Pausar</button>
+                <button id="stopBtn" class="btn-stop">Parar</button>
+            </div>
+        </div>
+    </div>
+    <div class="footer">
+        Copyright &copy; 2026 - Roberto Sim&otilde;es<br>
+        <a href="mailto:SEU_EMAIL">E-mail</a> | <a href="https://wa.me/5548996793828" target="_blank">WhatsApp</a>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
