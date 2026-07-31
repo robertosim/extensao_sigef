@@ -25,6 +25,16 @@ A partir de um arquivo CSV de parcelas, realiza downloads **diretos** (sem abrir
 
 Seleção por checkboxes: pode combinar PDF + CSV + SHP no mesmo processamento.
 
+### 🗺️ Geração de Mapa HTML
+A partir de uma pasta com arquivos CSV (com polígonos WKT), gera um mapa HTML interativo:
+- Seleção de pasta com busca recursiva de todos os `.csv` (incluindo subpastas)
+- Parse de CSVs com separador `;` e coluna WKT/GEOMETRIA/GEOMETRY
+- Suporte a POLYGON e MULTIPOLYGON
+- Mapa interativo com **Leaflet.js** e 3 camadas Google (Híbrido, Satellite, Terreno)
+- Legenda com Imóvel, SIGEF (link clicável) e Área em hectares
+- Cálculo de área via fórmula de Shoelace com correção de latitude
+- Salva HTML com nome da pasta no diretório de downloads
+
 ### 📂 Organização dos Arquivos
 ```
 Downloads/{código_ou_cpf_ou_cnpj}/
@@ -43,6 +53,7 @@ Downloads/{código_ou_cpf_ou_cnpj}/
 ### 🎯 Interface com Abas
 - **Aba Extração** - Textarea + radio buttons + botão "EXTRAIR DADOS"
 - **Aba Download** - Arquivo CSV + checkboxes (PDF/CSV/SHP) + botão "INICIAR DOWNLOAD"
+- **Aba Gerar Mapa** - Seleção de pasta + botão "GERAR MAPA"
 - **Barra de Progresso** - Aparece durante o processamento com controles Pausar/Parar
 
 ### 🤖 Simulação Comportamental Humana
@@ -56,8 +67,8 @@ Downloads/{código_ou_cpf_ou_cnpj}/
 
 ```text
 ├── manifest.json       # Definições de permissões e metadados da extensão (MV3 v2.1)
-├── popup.html          # Estrutura HTML com abas (Extração/Download)
-├── popup.js            # Lógica do popup, abas, verificação de login
+├── popup.html          # Estrutura HTML com abas (Extração/Download/Gerar Mapa/Logs)
+├── popup.js            # Lógica do popup, abas, verificação de login, geração de mapas
 ├── background.js       # Service worker: motor de automação e downloads diretos
 ├── content.js          # Script injetado para simulação de rolagens humanas
 └── README.md           # Documentação do projeto
@@ -93,6 +104,14 @@ Downloads/{código_ou_cpf_ou_cnpj}/
 2. Marque os tipos de arquivo que deseja baixar: **PDF**, **CSV** e/ou **SHP**.
 3. Clique em **INICIAR DOWNLOAD**.
 4. Os arquivos serão baixados diretos (sem abrir abas) e organizados em pastas por parcela no seu diretório de downloads.
+
+### 🔹 Passo 3: Gerar Mapa HTML
+
+1. Na aba **Gerar Mapa**, clique no campo de seleção e escolha a pasta raiz que contém os arquivos CSV.
+2. Todos os `.csv` da pasta e subpastas serão processados automaticamente.
+3. Clique em **GERAR MAPA**.
+4. Um mapa HTML interativo será gerado e salvo no seu diretório de downloads, com o nome da pasta selecionada.
+5. O mapa contém todos os polígonos unificados com legenda, links para o SIGEF e cálculo de área.
 
 ---
 

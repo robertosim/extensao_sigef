@@ -2,12 +2,36 @@ const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
 const PARCELAS_URL = "https://sigef.incra.gov.br/consultar/parcelas";
 
+const MAX_LOGS = 500;
+
+async function appendLog(type, msg) {
+    const timestamp = new Date().toLocaleString('pt-BR');
+    const entry = { timestamp, type, msg };
+    const { logs = [] } = await chrome.storage.local.get(["logs"]);
+    logs.push(entry);
+    if (logs.length > MAX_LOGS) logs.splice(0, logs.length - MAX_LOGS);
+    await chrome.storage.local.set({ logs });
+}
+
 function log(msg) {
     console.log(`[SIGEF Downloader] ${msg}`);
+    appendLog('info', msg);
 }
 
 function logError(msg, err) {
+    const detail = err ? (err.message || String(err)) : '';
     console.error(`[SIGEF Downloader] ${msg}`, err);
+    appendLog('error', `${msg}${detail ? ' - ' + detail : ''}`);
+}
+
+function logSuccess(msg) {
+    console.log(`[SIGEF Downloader] ${msg}`);
+    appendLog('success', msg);
+}
+
+function logWarn(msg) {
+    console.warn(`[SIGEF Downloader] ${msg}`);
+    appendLog('warn', msg);
 }
 
 async function safeDownload(options) {
@@ -170,21 +194,53 @@ function extractParcelasFromPage() {
         "table.table-hover tbody tr, table.table-striped tbody tr, table.table tbody tr"
     ));
     const data = [];
+    let foundHistorico = false;
+
     for (const row of rows) {
         const tds = row.querySelectorAll("td");
         if (tds.length < 5) continue;
-        if (tds[tds.length - 1].innerText.toLowerCase().includes("histórico")) break;
+
+        const lastCell = tds[tds.length - 1];
+        if (lastCell.querySelector("strong") && lastCell.innerText.toLowerCase().includes("histórico")) {
+            foundHistorico = true;
+            break;
+        }
+
         const link = tds[0].querySelector("a")?.href || "";
         const uuid = link.match(/detalhe\/([a-f0-9\-]+)/i)?.[1] || "";
+
+        const areaTd = tds[1];
+        let area = "";
+        const areaLinks = areaTd.querySelectorAll("a");
+        if (areaLinks.length > 0) {
+            const parts = [];
+            areaLinks.forEach(a => {
+                const raw = a.textContent;
+                const t = raw.replace(/\s+/g, "").trim();
+                if (t) parts.push(t);
+            });
+            area = parts.join(",");
+        }
+        if (!area) {
+            area = areaTd.textContent.replace(/\s+/g, "").trim();
+        }
+        area = area.replace(/[^0-9,\.]/g, "");
+        console.log(`[SIGEF Debug] Area raw="${areaTd.innerHTML.trim()}" final="${area}"`);
+
         data.push({
             nome: tds[0].innerText.trim(),
             codigo: uuid,
-            area: tds[1].innerText.trim(),
+            area: area,
             detentor: tds[2].innerText.trim(),
             cns: tds[3].innerText.trim(),
             matricula: tds[4].innerText.trim()
         });
     }
+
+    if (foundHistorico) {
+        return { data, next: false, nextHref: null };
+    }
+
     const nextLi = document.querySelector(".pagination li.next");
     const nextA = nextLi && !nextLi.classList.contains("disabled")
         ? nextLi.querySelector("a[href*=\"page=\"]") : null;
@@ -219,6 +275,7 @@ async function safeExtractorScript(tabRef, dataType, formattedValue, func, args)
             });
         } catch (err) {
             if (!isNoTabError(err)) throw err;
+            logWarn(`Tentativa ${attempt + 1}: Aba invalida, recriando...`);
             try { await chrome.tabs.remove(tabRef.id); } catch (_) {}
             const t = await chrome.tabs.create({ url: PARCELAS_URL, active: true });
             tabRef.id = t.id;
@@ -236,13 +293,6 @@ async function safeExtractorScript(tabRef, dataType, formattedValue, func, args)
     throw new Error("Nao foi possivel usar a aba apos recriar.");
 }
 
-async function disposeExtractorTab() {
-    const { extractorTabId } = await chrome.storage.local.get(["extractorTabId"]);
-    if (!extractorTabId) return;
-    try { await chrome.tabs.remove(extractorTabId); } catch (_) {}
-    await chrome.storage.local.set({ extractorTabId: null });
-}
-
 async function downloadExtractCsvBlob(folderName, csvContent) {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
     const base64 = await new Promise((resolve) => {
@@ -253,6 +303,62 @@ async function downloadExtractCsvBlob(folderName, csvContent) {
     log(`Baixando CSV extraido: ${folderName}.csv`);
     await safeDownload({ url: base64, filename: `${folderName}.csv` });
     await delay(500);
+}
+
+async function disposeExtractorTab() {
+    const { extractorTabId } = await chrome.storage.local.get(["extractorTabId"]);
+    if (!extractorTabId) return;
+    log('Fechando aba de extracao');
+    try { await chrome.tabs.remove(extractorTabId); } catch (_) {}
+    await chrome.storage.local.set({ extractorTabId: null });
+}
+
+async function checkLogin() {
+    log('Verificando login no SIGEF...');
+    return new Promise((resolve) => {
+        chrome.tabs.create({ url: 'https://sigef.incra.gov.br/usuario/home/', active: false }, (tab) => {
+            log(`Aba de verificacao criada (ID: ${tab.id})`);
+            const timeout = setTimeout(() => {
+                logWarn('Timeout ao verificar login (15s)');
+                try { chrome.tabs.remove(tab.id); } catch (_) {}
+                resolve(false);
+            }, 15000);
+
+            const listener = (tabId, info) => {
+                if (tabId !== tab.id || info.status !== 'complete') return;
+                chrome.tabs.onUpdated.removeListener(listener);
+                log('Pagina de login carregada, verificando elemento...');
+
+                setTimeout(async () => {
+                    try {
+                        const results = await chrome.scripting.executeScript({
+                            target: { tabId: tab.id },
+                            func: () => {
+                                const el = document.querySelector('a[href="/logout/"]');
+                                if (!el) return false;
+                                return el.classList.contains('br-item') && el.textContent.trim() === 'Sair';
+                            }
+                        });
+                        const logged = results[0]?.result === true;
+                        if (logged) {
+                            logSuccess('Login verificado: usuario LOGADO');
+                        } else {
+                            logWarn('Login verificado: usuario NAO LOGADO');
+                        }
+                        clearTimeout(timeout);
+                        try { chrome.tabs.remove(tab.id); } catch (_) {}
+                        resolve(logged);
+                    } catch (err) {
+                        logError('Erro ao verificar login', err);
+                        clearTimeout(timeout);
+                        try { chrome.tabs.remove(tab.id); } catch (_) {}
+                        resolve(false);
+                    }
+                }, 3000);
+            };
+            chrome.tabs.onUpdated.addListener(listener);
+        });
+    });
 }
 
 /* ===========================
@@ -267,13 +373,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
     });
 });
 
-chrome.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === "start_processing" || msg.action === "resume_processing") {
+        log(`Acao recebida: ${msg.action}`);
         chrome.storage.local.set({ isPaused: false, isProcessing: true });
         processQueue();
     } else if (msg.action === "pause_processing") {
+        log('Processo pausado pelo usuario');
         chrome.storage.local.set({ isPaused: true });
     } else if (msg.action === "stop_processing") {
+        log('Processo parado pelo usuario');
         void (async () => {
             await disposeExtractorTab();
             await chrome.storage.local.set({
@@ -281,6 +390,19 @@ chrome.runtime.onMessage.addListener((msg) => {
                 queue: [], currentIndex: 0, statusDetail: ""
             });
         })();
+    } else if (msg.action === "check_login") {
+        checkLogin().then(logged => sendResponse({ logged }));
+        return true;
+    } else if (msg.action === "get_logs") {
+        chrome.storage.local.get(["logs"]).then(({ logs }) => {
+            sendResponse({ logs: logs || [] });
+        });
+        return true;
+    } else if (msg.action === "clear_logs") {
+        chrome.storage.local.set({ logs: [] }).then(() => {
+            sendResponse({ ok: true });
+        });
+        return true;
     }
     return true;
 });
@@ -316,6 +438,8 @@ async function processQueue() {
             statusDetail: statusLabel
         });
 
+        log(`[${currentIndex + 1}/${queue.length}] Processando: ${nomeParcela}`);
+
         try {
             if (mode === 'extract') {
                 await executeExtractorLogic(currentLine, formatted, currentLine.trim(), dataType);
@@ -323,17 +447,19 @@ async function processQueue() {
                 await executeDownloadLogic(currentLine, codigoImovel, downloadTypes);
             }
 
+            logSuccess(`[${currentIndex + 1}/${queue.length}] Concluido: ${nomeParcela}`);
             currentIndex++;
             await chrome.storage.local.set({ currentIndex: currentIndex });
             await delay(1000);
         } catch (err) {
-            console.error("Erro no processamento:", currentLine, err);
+            logError(`[${currentIndex + 1}/${queue.length}] Erro no processamento: ${nomeParcela}`, err);
             currentIndex++;
             await chrome.storage.local.set({ currentIndex: currentIndex });
         }
     }
 
     if (currentIndex >= (queue?.length || 0)) {
+        logSuccess('Processamento finalizado!');
         await chrome.storage.local.set({
             isProcessing: false,
             currentParcelaNome: "Concluido!",
@@ -347,6 +473,7 @@ async function processQueue() {
    =========================== */
 
 async function executeExtractorLogic(rawValue, formattedValue, folderName, dataType) {
+    log(`Iniciando extracao para: ${rawValue} (formatado: ${formattedValue})`);
     const { extractorTabId: savedId } = await chrome.storage.local.get(["extractorTabId"]);
     const tabRef = { id: savedId || null };
 
@@ -355,16 +482,19 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
     }
 
     if (!tabRef.id) {
+        log('Criando aba de extracao...');
         const t = await chrome.tabs.create({ url: PARCELAS_URL, active: true });
         tabRef.id = t.id;
         await chrome.storage.local.set({ extractorTabId: tabRef.id });
         await waitTabComplete(tabRef.id);
     } else {
+        log('Reutilizando aba de extracao existente');
         try {
             await chrome.tabs.update(tabRef.id, { url: PARCELAS_URL });
             await waitTabComplete(tabRef.id);
         } catch (err) {
             if (!isNoTabError(err)) throw err;
+            log('Aba anterior invalida, criando nova aba...');
             const t = await chrome.tabs.create({ url: PARCELAS_URL, active: true });
             tabRef.id = t.id;
             await chrome.storage.local.set({ extractorTabId: tabRef.id });
@@ -373,12 +503,14 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
     }
 
     await delay(2000);
+    log('Injetando script de busca na pagina...');
     await safeExtractorScript(tabRef, dataType, formattedValue, injectSearchInPage, [dataType, formattedValue]);
 
     let allData = [];
     let hasNext = true;
     let searchHadZeroResults = false;
 
+    log('Aguardando resultados da busca...');
     while (hasNext) {
         let loaded = false;
         for (let i = 0; i < 45; i++) {
@@ -386,15 +518,23 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
             if (check[0]?.result) { loaded = true; break; }
             await delay(1000);
         }
-        if (!loaded) break;
+        if (!loaded) {
+            logWarn('Timeout aguardando carregamento da pagina');
+            break;
+        }
 
+        log('Extraindo dados da tabela...');
         const result = await safeExtractorScript(tabRef, dataType, formattedValue, extractParcelasFromPage, []);
         const res = result[0].result;
         if (res?.zeroResults) searchHadZeroResults = true;
-        if (res?.data?.length > 0) allData = allData.concat(res.data);
+        if (res?.data?.length > 0) {
+            allData = allData.concat(res.data);
+            log(`Encontradas ${res.data.length} parcelas na pagina atual`);
+        }
         hasNext = res?.next;
 
         if (hasNext && res.nextHref) {
+            log('Navegando para proxima pagina...');
             try {
                 await chrome.tabs.update(tabRef.id, { url: res.nextHref });
             } catch (err) {
@@ -418,12 +558,16 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
             deduped.push(d);
         }
 
-        const csvHeader = "\ufeffNome;Codigo;Area;Detentor;CNS;Matricula\n";
+        log(`Total de parcelas unicas: ${deduped.length}`);
+        const csvHeader = "\ufeff\"Nome\";\"Codigo\";\"Area\";\"Detentor\";\"CNS\";\"Matricula\"\n";
         const csvContent = csvHeader +
-            deduped.map(d => `${d.nome};${d.codigo};${d.area};${d.detentor};${d.cns};${d.matricula}`).join("\n");
+            deduped.map(d => `"${d.nome}";"${d.codigo}";"${d.area}";"${d.detentor}";"${d.cns}";"${d.matricula}"`).join("\n");
 
+        log(`Gerando CSV para: ${folderName}.csv`);
         await downloadExtractCsvBlob(folderName, csvContent);
+        logSuccess(`CSV baixado: ${folderName}.csv`);
     } else if (searchHadZeroResults) {
+        logWarn('Nenhuma parcela encontrada, gerando CSV vazio');
         const csvHeader = "\ufeffNome;Codigo;Area;Detentor;CNS;Matricula\n";
         await downloadExtractCsvBlob(folderName, csvHeader);
     }
@@ -442,19 +586,19 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
 async function executeDownloadLogic(line, folderName, downloadTypes) {
     const parts = line.split(';');
     if (parts.length < 2) {
-        log(`Linha invalida (sem ;): ${line}`);
+        logWarn(`Linha invalida (sem ;): ${line}`);
         return;
     }
 
     const nomeParcela = parts[0].trim();
     const uuid = parseParcelaUuidFromLine(line);
     if (!uuid) {
-        log(`UUID nao encontrado na linha: ${line}`);
+        logWarn(`UUID nao encontrado na linha: ${line}`);
         return;
     }
 
     const nomeLimpo = sanitize(nomeParcela);
-    log(`Processando: ${nomeParcela} (UUID: ${uuid}) | Tipos: ${downloadTypes.join(', ')}`);
+    log(`Processando download: ${nomeParcela} (UUID: ${uuid}) | Tipos: ${downloadTypes.join(', ')}`);
 
     if (downloadTypes.includes('pdf')) {
         const docs = [
@@ -466,6 +610,7 @@ async function executeDownloadLogic(line, folderName, downloadTypes) {
                 const filename = `${folderName}/${nomeLimpo}/${nomeLimpo}_${uuid}_${doc.type}.pdf`;
                 log(`Baixando ${doc.type}: ${filename}`);
                 await safeDownload({ url: doc.uri, filename, conflictAction: "overwrite" });
+                logSuccess(`Download concluido: ${doc.type}`);
             } catch (err) {
                 logError(`Erro ao baixar ${doc.type} de ${nomeParcela}`, err);
             }
@@ -479,6 +624,7 @@ async function executeDownloadLogic(line, folderName, downloadTypes) {
             const filename = `${folderName}/${nomeLimpo}/${nomeLimpo}_${uuid}.csv`;
             log(`Baixando CSV: ${filename}`);
             await safeDownload({ url: csvUrl, filename, conflictAction: "overwrite" });
+            logSuccess('Download CSV concluido');
         } catch (err) {
             logError(`Erro ao baixar CSV de ${nomeParcela}`, err);
         }
@@ -490,6 +636,7 @@ async function executeDownloadLogic(line, folderName, downloadTypes) {
             const filename = `${folderName}/${nomeLimpo}/${nomeLimpo}_${uuid}.zip`;
             log(`Baixando SHP: ${filename}`);
             await safeDownload({ url: shpUrl, filename, conflictAction: "overwrite" });
+            logSuccess('Download SHP concluido');
         } catch (err) {
             logError(`Erro ao baixar SHP de ${nomeParcela}`, err);
         }
