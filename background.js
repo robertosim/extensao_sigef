@@ -200,8 +200,26 @@ function extractParcelasFromPage() {
         const tds = row.querySelectorAll("td");
         if (tds.length < 5) continue;
 
+        const firstCellText = tds[0].innerText.trim();
         const lastCell = tds[tds.length - 1];
-        if (lastCell.querySelector("strong") && lastCell.innerText.toLowerCase().includes("histórico")) {
+        const lastCellText = lastCell.innerText.toLowerCase();
+        const hasStrong = !!lastCell.querySelector("strong");
+        const hasHistorico = lastCellText.includes("histórico");
+
+        if (hasStrong && hasHistorico) {
+            console.log('[SIGEF Downloader] "Parcela encontrada no histórico" detectada - parando paginação');
+            const link = tds[0].querySelector("a")?.href || "";
+            const uuid = link.match(/detalhe\/([a-f0-9\-]+)/i)?.[1] || "";
+            const areaTd = tds[1];
+            let area = areaTd.textContent.replace(/\s+/g, "").trim().replace(/[^0-9,\.]/g, "");
+            data.push({
+                nome: firstCellText,
+                codigo: uuid,
+                area: area,
+                detentor: tds[2].innerText.trim(),
+                cns: tds[3].innerText.trim(),
+                matricula: tds[4].innerText.trim()
+            });
             foundHistorico = true;
             break;
         }
@@ -225,10 +243,9 @@ function extractParcelasFromPage() {
             area = areaTd.textContent.replace(/\s+/g, "").trim();
         }
         area = area.replace(/[^0-9,\.]/g, "");
-        console.log(`[SIGEF Debug] Area raw="${areaTd.innerHTML.trim()}" final="${area}"`);
 
         data.push({
-            nome: tds[0].innerText.trim(),
+            nome: firstCellText,
             codigo: uuid,
             area: area,
             detentor: tds[2].innerText.trim(),
@@ -238,13 +255,63 @@ function extractParcelasFromPage() {
     }
 
     if (foundHistorico) {
-        return { data, next: false, nextHref: null };
+        return { data, next: false, nextHref: null, foundHistorico: true };
     }
 
+    let nextHref = null;
+
     const nextLi = document.querySelector(".pagination li.next");
-    const nextA = nextLi && !nextLi.classList.contains("disabled")
-        ? nextLi.querySelector("a[href*=\"page=\"]") : null;
-    return { data, next: !!(nextA), nextHref: nextA?.href || null };
+    if (nextLi && !nextLi.classList.contains("disabled")) {
+        const nextA = nextLi.querySelector("a[href]");
+        if (nextA && nextA.href) {
+            nextHref = nextA.href;
+        }
+    }
+
+    if (!nextHref) {
+        const activePage = document.querySelector(".pagination li.active");
+        if (activePage) {
+            const activeLink = activePage.querySelector("a");
+            const currentPageNum = activeLink ? parseInt(activeLink.textContent.trim(), 10) : 0;
+            const allLinks = document.querySelectorAll(".pagination ul li a[href*=\"page=\"]");
+            for (const a of allLinks) {
+                const pageNum = parseInt(a.textContent.trim(), 10);
+                if (pageNum === currentPageNum + 1) {
+                    nextHref = a.href;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!nextHref) {
+        const allLinks = document.querySelectorAll(".pagination a[href*=\"page=\"]");
+        let maxPage = 0;
+        for (const a of allLinks) {
+            const match = a.href.match(/page=(\d+)/);
+            if (match) {
+                const p = parseInt(match[1], 10);
+                if (p > maxPage) maxPage = p;
+            }
+        }
+        if (maxPage > 0) {
+            const currentUrl = new URL(window.location.href);
+            const currentPage = parseInt(currentUrl.searchParams.get("page") || "1", 10);
+            if (maxPage > currentPage) {
+                currentUrl.searchParams.set("page", maxPage.toString());
+                nextHref = currentUrl.toString();
+            }
+        }
+    }
+
+    if (!nextHref) {
+        const nextLink = document.querySelector(".pagination li.next a");
+        if (nextLink && nextLink.getAttribute("href")) {
+            nextHref = nextLink.href;
+        }
+    }
+
+    return { data, next: !!nextHref, nextHref };
 }
 
 function checkPageLoaded() {
@@ -257,7 +324,8 @@ function checkPageLoaded() {
     const noResults = /\bTotal:\s*0\b/i.test(h4)
         || /\bResultados:\s*0\b/i.test(h3)
         || /\bTotal:\s*0\b/i.test(h3);
-    return tableRows.length > 0 || noResults;
+    const hasPagination = !!document.querySelector(".pagination");
+    return tableRows.length > 0 || noResults || hasPagination;
 }
 
 /* ===========================
@@ -313,54 +381,6 @@ async function disposeExtractorTab() {
     await chrome.storage.local.set({ extractorTabId: null });
 }
 
-async function checkLogin() {
-    log('Verificando login no SIGEF...');
-    return new Promise((resolve) => {
-        chrome.tabs.create({ url: 'https://sigef.incra.gov.br/usuario/home/', active: false }, (tab) => {
-            log(`Aba de verificacao criada (ID: ${tab.id})`);
-            const timeout = setTimeout(() => {
-                logWarn('Timeout ao verificar login (15s)');
-                try { chrome.tabs.remove(tab.id); } catch (_) {}
-                resolve(false);
-            }, 15000);
-
-            const listener = (tabId, info) => {
-                if (tabId !== tab.id || info.status !== 'complete') return;
-                chrome.tabs.onUpdated.removeListener(listener);
-                log('Pagina de login carregada, verificando elemento...');
-
-                setTimeout(async () => {
-                    try {
-                        const results = await chrome.scripting.executeScript({
-                            target: { tabId: tab.id },
-                            func: () => {
-                                const el = document.querySelector('a[href="/logout/"]');
-                                if (!el) return false;
-                                return el.classList.contains('br-item') && el.textContent.trim() === 'Sair';
-                            }
-                        });
-                        const logged = results[0]?.result === true;
-                        if (logged) {
-                            logSuccess('Login verificado: usuario LOGADO');
-                        } else {
-                            logWarn('Login verificado: usuario NAO LOGADO');
-                        }
-                        clearTimeout(timeout);
-                        try { chrome.tabs.remove(tab.id); } catch (_) {}
-                        resolve(logged);
-                    } catch (err) {
-                        logError('Erro ao verificar login', err);
-                        clearTimeout(timeout);
-                        try { chrome.tabs.remove(tab.id); } catch (_) {}
-                        resolve(false);
-                    }
-                }, 3000);
-            };
-            chrome.tabs.onUpdated.addListener(listener);
-        });
-    });
-}
-
 /* ===========================
    LISTENERS
    =========================== */
@@ -390,9 +410,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 queue: [], currentIndex: 0, statusDetail: ""
             });
         })();
-    } else if (msg.action === "check_login") {
-        checkLogin().then(logged => sendResponse({ logged }));
-        return true;
     } else if (msg.action === "get_logs") {
         chrome.storage.local.get(["logs"]).then(({ logs }) => {
             sendResponse({ logs: logs || [] });
@@ -509,44 +526,123 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
     let allData = [];
     let hasNext = true;
     let searchHadZeroResults = false;
+    let pageNum = 1;
+    let lastPageUrl = null;
+    const MAX_RETRIES_PER_PAGE = 3;
 
+    await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Paginando...` });
     log('Aguardando resultados da busca...');
+
     while (hasNext) {
+        log(`Processando página ${pageNum}...`);
+        await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Página ${pageNum} (${allData.length} parcelas)` });
+
         let loaded = false;
-        for (let i = 0; i < 45; i++) {
+        for (let i = 0; i < 30; i++) {
             const check = await safeExtractorScript(tabRef, dataType, formattedValue, checkPageLoaded, []);
             if (check[0]?.result) { loaded = true; break; }
             await delay(1000);
         }
         if (!loaded) {
-            logWarn('Timeout aguardando carregamento da pagina');
+            logWarn(`Página ${pageNum} não carregou em 30s, recarregando...`);
+            try { await chrome.tabs.reload(tabRef.id); } catch (_) {}
+            await waitTabComplete(tabRef.id, 30000);
+            await delay(2000);
+            const check2 = await safeExtractorScript(tabRef, dataType, formattedValue, checkPageLoaded, []);
+            if (!check2[0]?.result) {
+                logWarn(`Página ${pageNum} não carregou após reload, parando paginação`);
+                break;
+            }
+        }
+
+        await delay(1000);
+
+        let res = null;
+        let extractionOk = false;
+
+        for (let retry = 0; retry < MAX_RETRIES_PER_PAGE; retry++) {
+            const result = await safeExtractorScript(tabRef, dataType, formattedValue, extractParcelasFromPage, []);
+            if (result && result[0] && result[0].result !== undefined && result[0].result !== null) {
+                res = result[0].result;
+                extractionOk = true;
+                break;
+            }
+            logWarn(`Tentativa ${retry + 1}/${MAX_RETRIES_PER_PAGE}: extração falhou na página ${pageNum}, recarregando...`);
+            await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Recarregando página ${pageNum} (tentativa ${retry + 1})...` });
+            try { await chrome.tabs.reload(tabRef.id); } catch (_) {}
+            await waitTabComplete(tabRef.id, 30000);
+            await delay(3000);
+        }
+
+        if (!extractionOk || !res) {
+            logWarn(`Extração falhou após ${MAX_RETRIES_PER_PAGE} tentativas na página ${pageNum}, parando`);
             break;
         }
 
-        log('Extraindo dados da tabela...');
-        const result = await safeExtractorScript(tabRef, dataType, formattedValue, extractParcelasFromPage, []);
-        const res = result[0].result;
-        if (res?.zeroResults) searchHadZeroResults = true;
         if (res?.data?.length > 0) {
             allData = allData.concat(res.data);
-            log(`Encontradas ${res.data.length} parcelas na pagina atual`);
+            log(`Encontradas ${res.data.length} parcelas na pagina ${pageNum} (total acumulado: ${allData.length})`);
+            await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Página ${pageNum} - ${allData.length} parcelas encontradas` });
+        } else {
+            log(`Nenhuma parcela encontrada na página ${pageNum}`);
         }
+
+        if (res.foundHistorico) {
+            log(`"Parcela encontrada no histórico" detectada na página ${pageNum}, parando paginação`);
+            break;
+        }
+
         hasNext = res?.next;
+        if (res?.zeroResults) searchHadZeroResults = true;
 
         if (hasNext && res.nextHref) {
-            log('Navegando para proxima pagina...');
+            const currentUrl = await safeExtractorScript(tabRef, dataType, formattedValue, () => window.location.href, []);
+            lastPageUrl = currentUrl[0]?.result || null;
+            
+            log(`Navegando para proxima pagina: ${res.nextHref}`);
+            await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Navegando para página ${pageNum + 1}...` });
             try {
                 await chrome.tabs.update(tabRef.id, { url: res.nextHref });
             } catch (err) {
                 if (!isNoTabError(err)) throw err;
+                logWarn('Aba invalida ao navegar, criando nova aba...');
                 const t = await chrome.tabs.create({ url: res.nextHref, active: true });
                 tabRef.id = t.id;
                 await chrome.storage.local.set({ extractorTabId: tabRef.id });
             }
-            await waitTabComplete(tabRef.id, 40000);
-            await delay(randomDelayMs(500, 1400));
+            await waitTabComplete(tabRef.id, 30000);
+            await delay(randomDelayMs(1000, 2500));
+            pageNum++;
+
+            let navigated = false;
+            for (let attempt = 0; attempt < 3; attempt++) {
+                const verifyUrl = await safeExtractorScript(tabRef, dataType, formattedValue, () => window.location.href, []);
+                const newUrl = verifyUrl[0]?.result || '';
+                if (newUrl !== lastPageUrl) {
+                    navigated = true;
+                    break;
+                }
+                logWarn(`URL não mudou (tentativa ${attempt + 1}), recarregando página ${pageNum}...`);
+                try {
+                    const urlObj = new URL(res.nextHref);
+                    await chrome.tabs.update(tabRef.id, { url: urlObj.toString() });
+                } catch (_) {
+                    try { await chrome.tabs.reload(tabRef.id); } catch (_) {}
+                }
+                await waitTabComplete(tabRef.id, 30000);
+                await delay(2000);
+            }
+            if (!navigated) {
+                logWarn('Não foi possível navegar para próxima página após 3 tentativas, parando');
+                hasNext = false;
+            }
+        } else if (hasNext && !res.nextHref) {
+            logWarn('Próxima página indicada mas link não encontrado, parando paginação');
+            hasNext = false;
         }
     }
+    log(`Paginação finalizada: ${pageNum} página(s), ${allData.length} parcelas`);
+    await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - ${allData.length} parcelas em ${pageNum} página(s)` });
 
     if (allData.length > 0) {
         const seen = new Set();

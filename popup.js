@@ -64,14 +64,6 @@ chrome.storage.onChanged.addListener(() => {
     }
 });
 
-async function checkLogin() {
-    return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'check_login' }, (response) => {
-            resolve(response?.logged === true);
-        });
-    });
-}
-
 async function startExtract() {
     const textarea = document.getElementById('dataInput');
     const lines = textarea.value.split(/\r?\n/).filter(l => l.trim().length > 0);
@@ -83,13 +75,6 @@ async function startExtract() {
     const radio = document.querySelector('input[name="dataType"]:checked');
     if (!radio) {
         return alert('Selecione o tipo de dado: Codigo, CPF ou CNPJ.');
-    }
-
-    const logged = await checkLogin();
-    if (!logged) {
-        alert('Voce nao esta logado no SIGEF.\n\nFaca login e tente novamente.');
-        chrome.tabs.create({ url: 'https://sigef.incra.gov.br/usuario/home/' });
-        return;
     }
 
     await chrome.storage.local.set({
@@ -124,13 +109,6 @@ async function startDownload() {
     if (chkPdf) downloadTypes.push('pdf');
     if (chkCsv) downloadTypes.push('csv');
     if (chkShp) downloadTypes.push('shp');
-
-    const logged = await checkLogin();
-    if (!logged) {
-        alert('Voce nao esta logado no SIGEF.\n\nFaca login e tente novamente.');
-        chrome.tabs.create({ url: 'https://sigef.incra.gov.br/usuario/home/' });
-        return;
-    }
 
     const file = fileInput.files[0];
     const codigoImovel = file.name.replace(/\.csv$/i, '').trim();
