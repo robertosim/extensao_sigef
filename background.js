@@ -368,8 +368,9 @@ async function downloadExtractCsvBlob(folderName, csvContent) {
         reader.onloadend = () => resolve(reader.result);
         reader.readAsDataURL(blob);
     });
-    log(`Baixando CSV extraido: ${folderName}.csv`);
-    await safeDownload({ url: base64, filename: `${folderName}.csv` });
+    const fileNameUpper = folderName.toUpperCase();
+    log(`Baixando CSV extraido: ${fileNameUpper}.csv`);
+    await safeDownload({ url: base64, filename: `${fileNameUpper}.csv` });
     await delay(500);
 }
 
@@ -693,7 +694,8 @@ async function executeDownloadLogic(line, folderName, downloadTypes) {
         return;
     }
 
-    const nomeLimpo = sanitize(nomeParcela);
+    const nomeLimpo = sanitize(nomeParcela).toUpperCase();
+    const folderNameUpper = folderName.toUpperCase();
     log(`Processando download: ${nomeParcela} (UUID: ${uuid}) | Tipos: ${downloadTypes.join(', ')}`);
 
     if (downloadTypes.includes('pdf')) {
@@ -703,7 +705,7 @@ async function executeDownloadLogic(line, folderName, downloadTypes) {
         ];
         for (const doc of docs) {
             try {
-                const filename = `${folderName}/${nomeLimpo}/${nomeLimpo}_${uuid}_${doc.type}.pdf`;
+                const filename = `${folderNameUpper}/${nomeLimpo}/${nomeLimpo}_${uuid}_${doc.type}.pdf`;
                 log(`Baixando ${doc.type}: ${filename}`);
                 await safeDownload({ url: doc.uri, filename, conflictAction: "overwrite" });
                 logSuccess(`Download concluido: ${doc.type}`);
@@ -717,7 +719,7 @@ async function executeDownloadLogic(line, folderName, downloadTypes) {
     if (downloadTypes.includes('csv')) {
         try {
             const csvUrl = `https://sigef.incra.gov.br/geo/exportar/parcela/csv/${uuid}/`;
-            const filename = `${folderName}/${nomeLimpo}/${nomeLimpo}_${uuid}.csv`;
+                const filename = `${folderNameUpper}/${nomeLimpo}/${nomeLimpo}_${uuid}.csv`;
             log(`Baixando CSV: ${filename}`);
             await safeDownload({ url: csvUrl, filename, conflictAction: "overwrite" });
             logSuccess('Download CSV concluido');
@@ -729,7 +731,7 @@ async function executeDownloadLogic(line, folderName, downloadTypes) {
     if (downloadTypes.includes('shp')) {
         try {
             const shpUrl = `https://sigef.incra.gov.br/geo/exportar/parcela/shp/${uuid}/`;
-            const filename = `${folderName}/${nomeLimpo}/${nomeLimpo}_${uuid}.zip`;
+                const filename = `${folderNameUpper}/${nomeLimpo}/${nomeLimpo}_${uuid}.zip`;
             log(`Baixando SHP: ${filename}`);
             await safeDownload({ url: shpUrl, filename, conflictAction: "overwrite" });
             logSuccess('Download SHP concluido');
