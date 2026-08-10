@@ -1,139 +1,238 @@
-# Sigef Extractor & Downloader 🚀
+# SIGEF Extractor & Downloader
 
-Uma extensão para o Google Chrome (**Manifest V3**) desenvolvida para automatizar a extração de dados cadastrais e download em lote de documentos georreferenciados diretamente da consulta pública de parcelas do **SIGEF (INCRA)**.
+Extensão para Google Chrome (**Manifest V3**) que automatiza a extração de dados cadastrais e downloads em lote de documentos georreferenciados do **SIGEF (INCRA)**.
 
 ---
 
-## 🌟 Funcionalidades Principais
+## Visão Geral
 
-### 🔍 Extração Automatizada (Scraper)
-- Textarea para digitar códigos de imóvel, CPF ou CNPJ (um por linha)
-- Seleção do tipo de dado por radio buttons: **Código**, **CPF** ou **CNPJ**
-- Formatação automática dos dados:
-  - Código de imóvel: 13 dígitos numéricos com zeros à esquerda → `807.010.003.123-7`
-  - CPF: 11 dígitos numéricos com zeros à esquerda → `846.172.849-15`
-  - CNPJ: 14 dígitos numéricos com zeros à esquerda → `25.372.342/0001-63`
-- Injeção de busca no SIGEF com campo correto (`#id_sncr` para código, `#id_cpf_cnpj` para CPF/CNPJ)
-- Extração da tabela de resultados com paginação automática
-- Geração de CSV consolidado com: Nome, Código, Área, Detentor, CNS, Matrícula
+| Item | Detalhe |
+|------|---------|
+| Nome | SIGEF Extractor & Downloader |
+| Versão | 2.1 |
+| Plataforma | Google Chrome / Microsoft Edge |
+| Arquitetura | Manifest V3 (Service Worker) |
+| Autor | Roberto Simões |
 
-### 📦 Downloads em Lote
-A partir de um arquivo CSV de parcelas, realiza downloads **diretos** (sem abrir abas) de:
-- 📄 **PDF** - Planta do imóvel e Memorial Descritivo
-- 📄 **CSV** - Exportação de dados da parcela
-- 📦 **SHP** - Shapefile completo (`.zip`)
+---
 
-Seleção por checkboxes: pode combinar PDF + CSV + SHP no mesmo processamento.
+## Funcionalidades
 
-### 🗺️ Geração de Mapa HTML
-A partir de uma pasta com arquivos CSV (com polígonos WKT), gera um mapa HTML interativo:
-- Seleção de pasta com busca recursiva de todos os `.csv` (incluindo subpastas)
-- Parse de CSVs com separador `;` e coluna WKT/GEOMETRIA/GEOMETRY
-- Suporte a POLYGON e MULTIPOLYGON
-- Mapa interativo com **Leaflet.js** e 3 camadas Google (Híbrido, Satellite, Terreno)
-- Legenda com Imóvel, SIGEF (link clicável) e Área em hectares
-- Cálculo de área via fórmula de Shoelace com correção de latitude
-- Salva HTML com nome da pasta no diretório de downloads
+### 1. Extração de Dados (Scraper)
 
-### 📂 Organização dos Arquivos
+Extrair dados cadastrais de parcelas do SIGEF a partir de códigos de imóvel, CPF ou CNPJ.
+
+<!-- ADICIONE IMAGEM: Tela da aba Extração -->
+_[Espaço para imagem da aba de Extração]_
+
+**Como funciona:**
+1. O usuário digita códigos/CPF/CNPJ na caixa de texto (um por linha)
+2. Seleciona o tipo de dado (Código, CPF ou CNPJ)
+3. Clica em "EXTRAIR DADOS"
+4. A extensão abre uma aba, busca cada item no SIGEF, pagina pelos resultados
+5. Gera um arquivo CSV consolidado com todos os dados encontrados
+
+**Dados extraídos por parcela:**
+- Nome da parcela
+- Código (UUID)
+- Área
+- Detentor
+- CNS (Chave Nacional de Sigilo)
+- Matrícula
+
+---
+
+### 2. Download em Lote de Documentos
+
+Baixar documentos oficiais do SIGEF (PDF, CSV, Shapefile) em lote, organizados por pasta.
+
+<!-- ADICIONE IMAGEM: Tela da aba Download -->
+_[Espaço para imagem da aba de Download]_
+
+**Tipos de arquivo disponíveis:**
+
+| Tipo | Conteúdo | Formato |
+|------|----------|---------|
+| PDF | Planta do imóvel + Memorial Descritivo | `.pdf` |
+| CSV | Exportação de dados da parcela | `.csv` |
+| SHP | Shapefile completo | `.zip` |
+
+**Como funciona:**
+1. Carrega o arquivo CSV gerado na etapa de extração
+2. Marca os tipos de arquivo desejados (PDF, CSV, SHP)
+3. Clica em "INICIAR DOWNLOAD"
+4. Os arquivos são baixados automaticamente e organizados em pastas
+
+**Estrutura de pastas gerada:**
 ```
-Downloads/{código_ou_cpf_ou_cnpj}/
-  └── {Nome_Parcela}/
-        ├── {Nome_Parcela}_{uuid}_planta.pdf
-        ├── {Nome_Parcela}_{uuid}_memorial.pdf
-        ├── {Nome_Parcela}_{uuid}.csv
-        └── {Nome_Parcela}_{uuid}.zip
-```
-
-### 🔐 Verificação de Login
-- Antes de cada operação (Extrair ou Download), verifica se o usuário está logado no SIGEF
-- Se não estiver logado, exibe alerta e abre automaticamente a página de login
-- Só inicia o processamento após confirmação de login
-
-### 🎯 Interface com Abas
-- **Aba Extração** - Textarea + radio buttons + botão "EXTRAIR DADOS"
-- **Aba Download** - Arquivo CSV + checkboxes (PDF/CSV/SHP) + botão "INICIAR DOWNLOAD"
-- **Aba Gerar Mapa** - Seleção de pasta + botão "GERAR MAPA"
-- **Barra de Progresso** - Aparece durante o processamento com controles Pausar/Parar
-
-### 🤖 Simulação Comportamental Humana
-- Digitação pausada com delays aleatórios
-- Movimentos de mouse e scroll simulados
-- Tempos de resposta dinâmicos para contornar bloqueios sistêmicos
-
----
-
-## 📂 Estrutura do Projeto
-
-```text
-├── manifest.json       # Definições de permissões e metadados da extensão (MV3 v2.1)
-├── popup.html          # Estrutura HTML com abas (Extração/Download/Gerar Mapa/Logs)
-├── popup.js            # Lógica do popup, abas, verificação de login, geração de mapas
-├── background.js       # Service worker: motor de automação e downloads diretos
-├── content.js          # Script injetado para simulação de rolagens humanas
-└── README.md           # Documentação do projeto
+Downloads/
+└── CODIGO_IMOVEL/
+    └── Nome_Parcela/
+          ├── Nome_Parcela_UUID_planta.pdf
+          ├── Nome_Parcela_UUID_memorial.pdf
+          ├── Nome_Parcela_UUID.csv
+          └── Nome_Parcela_UUID.zip
 ```
 
 ---
 
-## 🛠️ Como Instalar no Modo Desenvolvedor
+### 3. Geração de Mapa Interativo
 
-1. Faça o download ou clone este repositório no seu computador.
-2. Abra o Google Chrome e acesse o endereço: `chrome://extensions/`.
-3. No canto superior direito, ative a chave **"Modo do desenvolvedor"**.
-4. No canto superior esquerdo, clique em **"Carregar sem compactação"**.
-5. Selecione a pasta raiz que contém os arquivos deste projeto.
-6. Pronto! O ícone da extensão estará disponível na sua barra de ferramentas de extensões.
+Criar um mapa HTML interativo a partir de arquivos CSV com polígonos WKT.
 
----
+<!-- ADICIONE IMAGEM: Tela da aba Gerar Mapa -->
+_[Espaço para imagem da aba de Gerar Mapa]_
 
-## 📖 Instruções de Uso
+**Como funciona:**
+1. Seleciona a pasta raiz contendo os arquivos CSV
+2. A extensão processa recursivamente todos os `.csv`
+3. Detecta automaticamente colunas WKT/GEOMETRIA/GEOMETRY
+4. Gera um mapa HTML com:
+   - Polígonos coloridos por imóvel
+   - Camadas Google Maps (Híbrido, Satélite, Terreno)
+   - Legenda com nome, link SIGEF e área em hectares
+   - Área total calculada automaticamente
 
-### 🔹 Passo 1: Extração de Dados
-
-1. Clique no ícone da extensão para abrir o popup.
-2. Na aba **Extração**, digite os códigos, CPFs ou CNPJs na caixa de texto (um por linha).
-3. Selecione o tipo de dado: **Código**, **CPF** ou **CNPJ**.
-4. Clique em **EXTRAIR DADOS**.
-5. A extensão verifica se você está logado no SIGEF (se não estiver, abre a página de login).
-6. O sistema realizará as buscas sequenciais, navegará por todas as páginas de resultados e gerará um CSV consolidado.
-
-### 🔹 Passo 2: Download de Arquivos
-
-1. Na aba **Download**, carregue o arquivo CSV gerado na extração (ou qualquer CSV no formato `Nome;UUID;...`).
-2. Marque os tipos de arquivo que deseja baixar: **PDF**, **CSV** e/ou **SHP**.
-3. Clique em **INICIAR DOWNLOAD**.
-4. Os arquivos serão baixados diretos (sem abrir abas) e organizados em pastas por parcela no seu diretório de downloads.
-
-### 🔹 Passo 3: Gerar Mapa HTML
-
-1. Na aba **Gerar Mapa**, clique no campo de seleção e escolha a pasta raiz que contém os arquivos CSV.
-2. Todos os `.csv` da pasta e subpastas serão processados automaticamente.
-3. Clique em **GERAR MAPA**.
-4. Um mapa HTML interativo será gerado e salvo no seu diretório de downloads, com o nome da pasta selecionada.
-5. O mapa contém todos os polígonos unificados com legenda, links para o SIGEF e cálculo de área.
+<!-- ADICIONE IMAGEM: Exemplo de mapa gerado -->
+_[Espaço para imagem do mapa HTML gerado]_
 
 ---
 
-## ⚙️ Permissões Utilizadas
+### 4. Sistema de Logs
+
+Registro completo de todas as operações realizadas.
+
+<!-- ADICIONE IMAGEM: Tela da aba Logs -->
+_[Espaço para imagem da aba de Logs]_
+
+**Recursos:**
+- Logs coloridos por nível (informação, sucesso, aviso, erro)
+- Timestamp em cada entrada
+- Limite de 500 registros (os mais antigos são removidos)
+- Função para limpar e copiar logs
+
+---
+
+## Ciclo do Software
+
+<!-- ADICIONE IMAGEM: Fluxograma do ciclo completo -->
+_[Espaço para imagem do fluxograma de ciclo do software]_
+
+### Etapa 1 — Instalação
+1. Baixar/clonar o repositório
+2. Abrir `chrome://extensions/`
+3. Ativar "Modo do desenvolvedor"
+4. Clicar em "Carregar sem compactação"
+5. Selecionar a pasta do projeto
+
+### Etapa 2 — Extração
+1. Abrir o popup da extensão
+2. Digitar dados de busca (código/CPF/CNPJ)
+3. Iniciar extração
+4. Sistema busca, pagina e gera CSV consolidado
+
+### Etapa 3 — Download
+1. Carregar CSV gerado na etapa anterior
+2. Selecionar tipos de arquivo (PDF/CSV/SHP)
+3. Iniciar download
+4. Arquivos organizados automaticamente em pastas
+
+### Etapa 4 — Mapa
+1. Selecionar pasta com CSVs de polígonos
+2. Gerar mapa HTML interativo
+3. Abrir resultado no navegador
+
+---
+
+## Pré-requisitos
+
+- Google Chrome 88+ ou Microsoft Edge 88+
+- Conta ativa no SIGEF (INCRA)
+- Login manter durante toda a execução
+
+---
+
+## Permissões da Extensão
 
 | Permissão | Finalidade |
-| :--- | :--- |
-| `downloads` | Para salvar os relatórios extraídos e documentos em pastas locais |
-| `tabs` | Para criar, fechar e atualizar páginas de navegação e verificar login |
-| `scripting` | Para injetar as rotinas de busca diretamente no DOM do SIGEF |
-| `activeTab` | Para acessar a aba ativa na verificação de login |
-| `storage` | Para persistir as filas e o estado de progresso mesmo se o popup fechar |
-| `webNavigation` | Para rastrear e sincronizar o carregamento das páginas |
+|-----------|------------|
+| `downloads` | Salvar arquivos e relatórios |
+| `tabs` | Criar, fechar e navegar abas |
+| `scripting` | Injetar scripts de automação |
+| `activeTab` | Verificar status de login |
+| `storage` | Persistir fila e estado |
+| `webNavigation` | Rastrear carregamento de páginas |
 
 ---
 
-## 📞 Suporte e Contato
+## Arquitetura Técnica
 
-Desenvolvido por **Roberto Simões**. Caso precise de suporte personalizado, melhorias no sistema ou queira relatar algum comportamento indesejado, entre em contato pelos canais oficiais dispostos na interface:
+### Estrutura de Arquivos
 
-✉️ E-mail: robsimoes@gmail.com
+```
+Downloader/
+├── manifest.json          # Configuração (permissões, metadados)
+├── popup.html             # Interface do usuário (4 abas)
+├── popup.js               # Lógica do popup e geração de mapas
+├── background.js          # Service Worker (motor de automação)
+├── content.js             # Script de simulação comportamental
+├── README.md              # Esta documentação
+├── DOCUMENTACAO_TECNICA.md # Documentação técnica detalhada
+└── LICENSE                # Licença
+```
 
-💬 WhatsApp: +55 (48) 99679-3828
+### Componentes
 
-💼 LinkedIn: linkedin.com/in/robertosim
+<!-- ADICIONE IMAGEM: Diagrama de componentes -->
+_[Espaço para imagem do diagrama de componentes]_
+
+| Componente | Responsabilidade |
+|------------|-----------------|
+| **popup.html/js** | Interface do usuário, validação, estado visual |
+| **background.js** | Motor principal: fila, automação, downloads |
+| **content.js** | Anti-detecção: scroll e mouse simulados |
+| **chrome.storage** | Persistência: fila, logs, configurações |
+
+---
+
+## Tecnologias Utilizadas
+
+| Tecnologia | Uso |
+|------------|-----|
+| JavaScript ES2020+ | Linguagem principal |
+| Chrome Extensions API v3 | Plataforma |
+| HTML/CSS | Interface do usuário |
+| Leaflet.js | Mapas interativos |
+| API Google Maps | Camadas de mapas |
+
+---
+
+## Boas Práticas Implementadas
+
+- **Anti-detecção**: Digitação pausada, movimentos de mouse, delays aleatórios
+- **Tratamento de erros**: Retry com 3 tentativas, recuperação de abas
+- **Persistência**: Estado sobrevive ao fechamento do popup
+- **Segurança**: Permissões mínimas necessárias
+- **Organização**: Estrutura de pastas automática
+
+---
+
+## Suporte
+
+Desenvolvido por **Roberto Simões**
+
+| Canal | Contato |
+|-------|---------|
+| E-mail | robsimoes@gmail.com |
+| WhatsApp | +55 (48) 99679-3828 |
+| LinkedIn | linkedin.com/in/robertosim |
+
+---
+
+## Documentação Adicional
+
+- [DOCUMENTACAO_TECNICA.md](DOCUMENTACAO_TECNICA.md) — Documentação técnica completa com fluxogramas, APIs, e detalhes de implementação
+
+---
+
+*SIGEF Extractor & Downloader v2.1 — Copyright © 2026 Roberto Simões*
