@@ -173,16 +173,81 @@ function injectSearchInPage(dataType, formattedValue) {
         await sleep(120, 350);
     }
 
+    function hasErrorMessage() {
+        const alertEl = document.querySelector('.alert.alert-error');
+        if (!alertEl) return false;
+        const text = alertEl.innerText || alertEl.textContent || '';
+        return text.includes('Nenhum dos termos da consulta foi preenchido');
+    }
+
+    function clearErrorMessage() {
+        const alertEl = document.querySelector('.alert.alert-error');
+        if (alertEl) alertEl.remove();
+    }
+
+    function isFieldFilled(input, expectedValue) {
+        if (!input) return false;
+        const val = input.value.trim();
+        return val.length > 0 && val === expectedValue;
+    }
+
     const fieldId = (dataType === 'cpf' || dataType === 'cnpj') ? 'id_cpf_cnpj' : 'id_sncr';
     const input = document.getElementById(fieldId);
     const btn = document.querySelector("#pesquisaForm button[type=\"submit\"]")
         || document.querySelector("button[value=\"Pesquisar\"]");
 
-    if (input && btn) {
-        humanType(input, formattedValue).then(() => {
-            dispatchMouseChain(btn);
-        });
+    if (!input || !btn) {
+        window.__searchResult = { success: false, reason: 'element_not_found' };
+        return;
     }
+
+    clearErrorMessage();
+
+    humanType(input, formattedValue).then(async () => {
+        await sleep(300, 600);
+
+        if (!isFieldFilled(input, formattedValue)) {
+            input.value = formattedValue;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+            await sleep(200, 400);
+        }
+
+        if (!isFieldFilled(input, formattedValue)) {
+            window.__searchResult = { success: false, reason: 'field_not_filled' };
+            return;
+        }
+
+        dispatchMouseChain(btn);
+
+        await sleep(2000, 3000);
+
+        if (hasErrorMessage()) {
+            clearErrorMessage();
+            await sleep(500, 800);
+            input.value = '';
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            await sleep(200, 400);
+
+            await humanType(input, formattedValue);
+            await sleep(300, 600);
+
+            if (isFieldFilled(input, formattedValue)) {
+                dispatchMouseChain(btn);
+                await sleep(2000, 3000);
+
+                if (hasErrorMessage()) {
+                    window.__searchResult = { success: false, reason: 'error_after_retry' };
+                    return;
+                }
+            } else {
+                window.__searchResult = { success: false, reason: 'field_not_filled_after_retry' };
+                return;
+            }
+        }
+
+        window.__searchResult = { success: true };
+    });
 }
 
 /* ===========================
@@ -315,7 +380,16 @@ function extractParcelasFromPage() {
 }
 
 function checkPageLoaded() {
-    if (document.readyState === "loading") return false;
+    if (document.readyState === "loading") return { loaded: false, searchError: false };
+
+    const errorAlert = document.querySelector('.alert.alert-error');
+    if (errorAlert) {
+        const text = errorAlert.innerText || errorAlert.textContent || '';
+        if (text.includes('Nenhum dos termos da consulta foi preenchido')) {
+            return { loaded: true, searchError: true };
+        }
+    }
+
     const tableRows = document.querySelectorAll(
         "table.table-hover tbody tr, table.table-striped tbody tr, table.table tbody tr"
     );
@@ -325,7 +399,17 @@ function checkPageLoaded() {
         || /\bResultados:\s*0\b/i.test(h3)
         || /\bTotal:\s*0\b/i.test(h3);
     const hasPagination = !!document.querySelector(".pagination");
-    return tableRows.length > 0 || noResults || hasPagination;
+    const loaded = tableRows.length > 0 || noResults || hasPagination;
+    return { loaded, searchError: false };
+}
+
+function getSearchResult() {
+    return window.__searchResult || null;
+}
+
+function clearSearchError() {
+    const alertEl = document.querySelector('.alert.alert-error');
+    if (alertEl) alertEl.remove();
 }
 
 /* ===========================
@@ -522,7 +606,43 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
 
     await delay(2000);
     log('Injetando script de busca na pagina...');
-    await safeExtractorScript(tabRef, dataType, formattedValue, injectSearchInPage, [dataType, formattedValue]);
+
+    const MAX_SEARCH_RETRIES = 3;
+    let searchSuccess = false;
+
+    for (let searchAttempt = 0; searchAttempt < MAX_SEARCH_RETRIES; searchAttempt++) {
+        if (searchAttempt > 0) {
+            log(`Tentativa ${searchAttempt + 1}/${MAX_SEARCH_RETRIES} de busca...`);
+            await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Tentativa ${searchAttempt + 1} de busca...` });
+            try { await chrome.tabs.reload(tabRef.id); } catch (_) {}
+            await waitTabComplete(tabRef.id, 30000);
+            await delay(2000);
+        }
+
+        await safeExtractorScript(tabRef, dataType, formattedValue, injectSearchInPage, [dataType, formattedValue]);
+        await delay(4000);
+
+        const searchResult = await safeExtractorScript(tabRef, dataType, formattedValue, getSearchResult, []);
+        const result = searchResult?.[0]?.result;
+
+        if (result && result.success) {
+            searchSuccess = true;
+            log('Busca injetada com sucesso');
+            break;
+        }
+
+        const reason = result?.reason || 'unknown';
+        logWarn(`Busca falhou (tentativa ${searchAttempt + 1}): ${reason}`);
+
+        if (reason === 'element_not_found') {
+            logWarn('Elementos de busca nao encontrados na pagina, abortando');
+            break;
+        }
+    }
+
+    if (!searchSuccess) {
+        logWarn(`Busca nao foi bem-sucedida apos ${MAX_SEARCH_RETRIES} tentativas, prosseguindo com verificacao...`);
+    }
 
     let allData = [];
     let hasNext = true;
@@ -539,18 +659,61 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
         await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Página ${pageNum} (${allData.length} parcelas)` });
 
         let loaded = false;
+        let searchErrorDetected = false;
         for (let i = 0; i < 30; i++) {
             const check = await safeExtractorScript(tabRef, dataType, formattedValue, checkPageLoaded, []);
-            if (check[0]?.result) { loaded = true; break; }
+            const checkResult = check[0]?.result;
+            if (checkResult) {
+                if (checkResult.searchError) {
+                    searchErrorDetected = true;
+                    logWarn(`Erro de busca detectado na página ${pageNum}: campo não preenchido`);
+                    break;
+                }
+                if (checkResult.loaded) {
+                    loaded = true;
+                    break;
+                }
+            }
             await delay(1000);
         }
+
+        if (searchErrorDetected) {
+            log(`Tentando corrigir erro de busca na página ${pageNum}...`);
+            await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Corrigindo busca na página ${pageNum}...` });
+
+            await safeExtractorScript(tabRef, dataType, formattedValue, clearSearchError, []);
+            await delay(500);
+
+            await safeExtractorScript(tabRef, dataType, formattedValue, injectSearchInPage, [dataType, formattedValue]);
+            await delay(4000);
+
+            let retryLoaded = false;
+            for (let i = 0; i < 30; i++) {
+                const check = await safeExtractorScript(tabRef, dataType, formattedValue, checkPageLoaded, []);
+                const checkResult = check[0]?.result;
+                if (checkResult && checkResult.loaded && !checkResult.searchError) {
+                    retryLoaded = true;
+                    break;
+                }
+                if (checkResult && checkResult.searchError) {
+                    await safeExtractorScript(tabRef, dataType, formattedValue, clearSearchError, []);
+                    await delay(500);
+                    await safeExtractorScript(tabRef, dataType, formattedValue, injectSearchInPage, [dataType, formattedValue]);
+                    await delay(4000);
+                }
+                await delay(1000);
+            }
+            loaded = retryLoaded;
+        }
+
         if (!loaded) {
             logWarn(`Página ${pageNum} não carregou em 30s, recarregando...`);
             try { await chrome.tabs.reload(tabRef.id); } catch (_) {}
             await waitTabComplete(tabRef.id, 30000);
             await delay(2000);
             const check2 = await safeExtractorScript(tabRef, dataType, formattedValue, checkPageLoaded, []);
-            if (!check2[0]?.result) {
+            const check2Result = check2[0]?.result;
+            if (!check2Result || !check2Result.loaded || check2Result.searchError) {
                 logWarn(`Página ${pageNum} não carregou após reload, parando paginação`);
                 break;
             }
