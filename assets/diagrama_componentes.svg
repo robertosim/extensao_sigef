@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="540" viewBox="0 0 940 540" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#006633"/>
+    </marker>
+    <marker id="arCinza" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#888888"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="940" height="540" fill="#ffffff"/>
+
+  <!-- popup -->
+  <rect x="40" y="50" width="320" height="110" rx="8" fill="#EAF6E4" stroke="#006633" stroke-width="2"/>
+  <text x="200" y="82" font-size="16" font-weight="bold" fill="#006633" text-anchor="middle">popup.html + popup.js</text>
+  <text x="200" y="108" font-size="12" fill="#3d6b4f" text-anchor="middle">Interface (4 abas), validação,</text>
+  <text x="200" y="126" font-size="12" fill="#3d6b4f" text-anchor="middle">montagem da fila e geração de mapas</text>
+
+  <!-- storage -->
+  <rect x="580" y="50" width="320" height="110" rx="8" fill="#EAF6E4" stroke="#006633" stroke-width="2"/>
+  <text x="740" y="82" font-size="16" font-weight="bold" fill="#006633" text-anchor="middle">chrome.storage.local</text>
+  <text x="740" y="108" font-size="12" fill="#3d6b4f" text-anchor="middle">fila (queue), logs (2.000),</text>
+  <text x="740" y="126" font-size="12" fill="#3d6b4f" text-anchor="middle">isProcessing / isPaused / modo</text>
+
+  <!-- background -->
+  <rect x="40" y="240" width="380" height="170" rx="8" fill="#006633" stroke="#004d26" stroke-width="2"/>
+  <text x="230" y="272" font-size="16" font-weight="bold" fill="#ffffff" text-anchor="middle">background.js — Service Worker</text>
+  <text x="230" y="304" font-size="12.5" fill="#d9f0e0" text-anchor="middle">processQueue (fila de CSVs, um por um)</text>
+  <text x="230" y="330" font-size="12.5" fill="#d9f0e0" text-anchor="middle">extração: busca, espera de DOM, retries</text>
+  <text x="230" y="356" font-size="12.5" fill="#d9f0e0" text-anchor="middle">downloads (PDF / CSV / SHP / HTML)</text>
+  <text x="230" y="382" font-size="12.5" fill="#d9f0e0" text-anchor="middle">logs serializados + volcado DEBUG</text>
+
+  <!-- SIGEF -->
+  <rect x="580" y="230" width="320" height="110" rx="8" fill="#f4f4f4" stroke="#888888" stroke-width="2"/>
+  <text x="740" y="262" font-size="16" font-weight="bold" fill="#444444" text-anchor="middle">SIGEF (sigef.incra.gov.br)</text>
+  <text x="740" y="288" font-size="12" fill="#666666" text-anchor="middle">/geo/consulta, /parcela/detalhe,</text>
+  <text x="740" y="306" font-size="12" fill="#666666" text-anchor="middle">planta, memorial, CSV, SHP</text>
+
+  <!-- content -->
+  <rect x="580" y="390" width="320" height="90" rx="8" fill="#EAF6E4" stroke="#006633" stroke-width="2"/>
+  <text x="740" y="422" font-size="16" font-weight="bold" fill="#006633" text-anchor="middle">content.js</text>
+  <text x="740" y="448" font-size="12" fill="#3d6b4f" text-anchor="middle">simula scroll e mousemove</text>
+  <text x="740" y="466" font-size="12" fill="#3d6b4f" text-anchor="middle">nas páginas de detalhe (anti-detecção)</text>
+
+  <!-- downloads -->
+  <rect x="40" y="450" width="380" height="62" rx="8" fill="#EAF6E4" stroke="#006633" stroke-width="2"/>
+  <text x="230" y="478" font-size="15" font-weight="bold" fill="#006633" text-anchor="middle">chrome.downloads</text>
+  <text x="230" y="498" font-size="12" fill="#3d6b4f" text-anchor="middle">salva os arquivos no disco, um por item da fila</text>
+
+  <!-- setas popup <-> background -->
+  <g stroke="#006633" stroke-width="2" fill="none">
+    <line x1="160" y1="160" x2="160" y2="238" marker-end="url(#ar)"/>
+    <line x1="300" y1="240" x2="300" y2="162" marker-end="url(#ar)"/>
+  </g>
+  <text x="170" y="204" font-size="11" fill="#006633">start / pause / stop</text>
+  <text x="310" y="204" font-size="11" fill="#006633">atualiza UI</text>
+
+  <!-- popup <-> storage -->
+  <line x1="360" y1="105" x2="578" y2="105" stroke="#006633" stroke-width="2" fill="none" marker-start="url(#ar)" marker-end="url(#ar)"/>
+  <rect x="404" y="88" width="132" height="22" fill="#ffffff"/>
+  <text x="470" y="103" font-size="11.5" fill="#006633" text-anchor="middle">storage.local</text>
+
+  <!-- background <-> storage -->
+  <line x1="420" y1="268" x2="578" y2="142" stroke="#006633" stroke-width="2" fill="none" marker-start="url(#ar)" marker-end="url(#ar)"/>
+  <rect x="440" y="186" width="126" height="22" fill="#ffffff"/>
+  <text x="503" y="201" font-size="11.5" fill="#006633" text-anchor="middle">fila / logs / estado</text>
+
+  <!-- background <-> SIGEF -->
+  <line x1="420" y1="300" x2="578" y2="288" stroke="#006633" stroke-width="2" fill="none" marker-start="url(#ar)" marker-end="url(#ar)"/>
+  <rect x="446" y="306" width="150" height="22" fill="#ffffff"/>
+  <text x="521" y="321" font-size="11.5" fill="#006633" text-anchor="middle">scripting + tabs</text>
+
+  <!-- background -> downloads -->
+  <line x1="230" y1="410" x2="230" y2="448" stroke="#006633" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <text x="242" y="436" font-size="11" fill="#006633">baixar arquivos</text>
+
+  <!-- SIGEF -> content (injecao) -->
+  <line x1="740" y1="340" x2="740" y2="388" stroke="#888888" stroke-width="2" stroke-dasharray="6,5" fill="none" marker-end="url(#arCinza)"/>
+  <text x="752" y="374" font-size="11" fill="#888888">injetado em /parcela/detalhe</text>
+</svg>

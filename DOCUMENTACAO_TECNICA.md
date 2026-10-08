@@ -17,10 +17,12 @@ Downloader/
 ├── popup.js               # Lógica do popup, gerenciamento de estado, geração de mapas
 ├── background.js          # Service Worker - motor de automação e downloads
 ├── content.js             # Script injetado para simulação comportamental
-├── icon16.png             # Ícone 16x16
-├── icon32.png             # Ícone 32x32
-├── icon48.png             # Ícone 48x48
-├── icon128.png            # Ícone 128x128
+├── icons/                 # Ícones da extensão
+│   ├── icon16.png         # Ícone 16x16
+│   ├── icon32.png         # Ícone 32x32
+│   ├── icon48.png         # Ícone 48x48
+│   └── icon128.png        # Ícone 128x128
+├── assets/                # Imagens do README (telas e diagramas)
 ├── .gitattributes         # Marca PNGs como binários (evita corrupção por CRLF)
 ├── README.md              # Documentação de usuário
 ├── DOCUMENTACAO_TECNICA.md # Esta documentação

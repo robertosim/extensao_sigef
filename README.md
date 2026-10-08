@@ -22,7 +22,7 @@ Extensão para Google Chrome (**Manifest V3**) que automatiza a extração de da
 
 Extrair dados cadastrais de parcelas do SIGEF a partir de códigos de imóvel, CPF ou CNPJ.
 
-![Aba Extração](assets/Extracao.png)
+![Aba Extração](assets/extracao.svg)
 
 **Como funciona:**
 1. O usuário digita códigos/CPF/CNPJ na caixa de texto (um por linha)
@@ -57,7 +57,7 @@ Extrair dados cadastrais de parcelas do SIGEF a partir de códigos de imóvel, C
 
 Baixar documentos oficiais do SIGEF (PDF, CSV, Shapefile) em lote, organizados por pasta.
 
-![Aba Download](assets/Download.png)
+![Aba Download](assets/download.svg)
 
 **Tipos de arquivo disponíveis:**
 
@@ -95,7 +95,7 @@ Downloads/
 
 Criar um mapa HTML interativo a partir de arquivos CSV com polígonos WKT.
 
-![Aba Gerar Mapa](assets/Mapa.png)
+![Aba Gerar Mapa](assets/gerar_mapa.svg)
 
 **Como funciona:**
 1. Seleciona a pasta raiz contendo os arquivos CSV
@@ -107,8 +107,7 @@ Criar um mapa HTML interativo a partir de arquivos CSV com polígonos WKT.
    - Legenda com nome, link SIGEF e área em hectares
    - Área total calculada automaticamente
 
-<!-- ADICIONE IMAGEM: Exemplo de mapa gerado -->
-_[Espaço para imagem do mapa HTML gerado]_
+![Aba Gerar Mapa](assets/mapa_gerado.svg)
 
 ---
 
@@ -116,7 +115,7 @@ _[Espaço para imagem do mapa HTML gerado]_
 
 Registro completo de todas as operações realizadas.
 
-![Aba Logs](assets/Log.png)
+![Aba Logs](assets/log.svg)
 
 **Recursos:**
 - Logs coloridos por nível (informação, sucesso, aviso, erro)
@@ -190,10 +189,12 @@ Downloader/
 ├── popup.js               # Lógica do popup e geração de mapas
 ├── background.js          # Service Worker (motor de automação)
 ├── content.js             # Script de simulação comportamental
-├── icon16.png             # Ícone 16x16
-├── icon32.png             # Ícone 32x32
-├── icon48.png             # Ícone 48x48
-├── icon128.png            # Ícone 128x128
+├── icons/                 # Ícones da extensão
+│   ├── icon16.png         # Ícone 16x16
+│   ├── icon32.png         # Ícone 32x32
+│   ├── icon48.png         # Ícone 48x48
+│   └── icon128.png        # Ícone 128x128
+├── assets/                # Imagens deste README (telas, diagramas)
 ├── README.md              # Esta documentação
 ├── DOCUMENTACAO_TECNICA.md # Documentação técnica detalhada
 └── LICENSE                # Licença
@@ -201,8 +202,7 @@ Downloader/
 
 ### Componentes
 
-<!-- ADICIONE IMAGEM: Diagrama de componentes -->
-_[Espaço para imagem do diagrama de componentes]_
+![Diagrama de componentes](assets/diagrama_componentes.svg)
 
 | Componente | Responsabilidade |
 |------------|-----------------|
