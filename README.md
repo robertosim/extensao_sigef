@@ -22,8 +22,7 @@ Extensão para Google Chrome (**Manifest V3**) que automatiza a extração de da
 
 Extrair dados cadastrais de parcelas do SIGEF a partir de códigos de imóvel, CPF ou CNPJ.
 
-<!-- ADICIONE IMAGEM: Tela da aba Extração -->
-_[Espaço para imagem da aba de Extração]_
+![Aba Extração](assets/Extracao.png)
 
 **Como funciona:**
 1. O usuário digita códigos/CPF/CNPJ na caixa de texto (um por linha)
@@ -58,8 +57,7 @@ _[Espaço para imagem da aba de Extração]_
 
 Baixar documentos oficiais do SIGEF (PDF, CSV, Shapefile) em lote, organizados por pasta.
 
-<!-- ADICIONE IMAGEM: Tela da aba Download -->
-_[Espaço para imagem da aba de Download]_
+![Aba Download](assets/Download.png)
 
 **Tipos de arquivo disponíveis:**
 
@@ -97,8 +95,7 @@ Downloads/
 
 Criar um mapa HTML interativo a partir de arquivos CSV com polígonos WKT.
 
-<!-- ADICIONE IMAGEM: Tela da aba Gerar Mapa -->
-_[Espaço para imagem da aba de Gerar Mapa]_
+![Aba Gerar Mapa](assets/Mapa.png)
 
 **Como funciona:**
 1. Seleciona a pasta raiz contendo os arquivos CSV
@@ -119,8 +116,7 @@ _[Espaço para imagem do mapa HTML gerado]_
 
 Registro completo de todas as operações realizadas.
 
-<!-- ADICIONE IMAGEM: Tela da aba Logs -->
-_[Espaço para imagem da aba de Logs]_
+![Aba Logs](assets/Log.png)
 
 **Recursos:**
 - Logs coloridos por nível (informação, sucesso, aviso, erro)
@@ -134,8 +130,7 @@ _[Espaço para imagem da aba de Logs]_
 
 ## Ciclo do Software
 
-<!-- ADICIONE IMAGEM: Fluxograma do ciclo completo -->
-_[Espaço para imagem do fluxograma de ciclo do software]_
+![Fluxograma do ciclo do software](assets/fluxograma.svg)
 
 ### Etapa 1 — Instalação
 1. Baixar/clonar o repositório
