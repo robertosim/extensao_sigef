@@ -93,8 +93,8 @@ async function startExtract() {
 
 async function startDownload() {
     const fileInput = document.getElementById('csvFile');
-    if (!fileInput.files[0]) {
-        return alert('Selecione o arquivo CSV das parcelas.');
+    if (!fileInput.files || fileInput.files.length === 0) {
+        return alert('Selecione pelo menos um arquivo CSV das parcelas.');
     }
 
     const chkPdf = document.getElementById('chkPdf').checked;
@@ -110,39 +110,50 @@ async function startDownload() {
     if (chkCsv) downloadTypes.push('csv');
     if (chkShp) downloadTypes.push('shp');
 
-    const file = fileInput.files[0];
-    const codigoImovel = file.name.replace(/\.csv$/i, '').trim();
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const lines = e.target.result.split(/\r?\n/)
-            .filter(l => {
-                if (l.trim().length === 0) return false;
-                const lower = l.toLowerCase().trim();
-                if (lower.startsWith('nome;')) return false;
-                return true;
-            });
-
-        if (lines.length === 0) {
-            return alert('O arquivo CSV esta vazio ou nao contem dados validos.');
+    const files = Array.from(fileInput.files);
+    const allQueueItems = [];
+    
+    // Processa cada arquivo CSV
+    for (const file of files) {
+        try {
+            const text = await file.text();
+            const lines = text.split(/\r?\n/)
+                .filter(l => {
+                    if (l.trim().length === 0) return false;
+                    const lower = l.toLowerCase().trim();
+                    if (lower.startsWith('nome;')) return false;
+                    return true;
+                });
+            
+            // Adiciona as linhas com a informação de qual arquivo/pasta pertence
+            for (const line of lines) {
+                allQueueItems.push({
+                    line: line.trim(),
+                    codigoImovel: file.name.replace(/\.csv$/i, '').trim()
+                });
+            }
+        } catch (e) {
+            console.error('Erro ao ler arquivo:', file.name, e);
         }
+    }
 
-        await chrome.storage.local.set({
-            queue: lines,
-            currentIndex: 0,
-            isProcessing: true,
-            isPaused: false,
-            mode: 'download',
-            downloadTypes: downloadTypes,
-            codigoImovel: codigoImovel,
-            dataType: 'csv_file',
-            currentParcelaNome: 'Iniciando...',
-            statusDetail: ''
-        });
+    if (allQueueItems.length === 0) {
+        return alert('Nenhum dado válido encontrado nos arquivos CSV selecionados.');
+    }
 
-        chrome.runtime.sendMessage({ action: 'start_processing' });
-    };
-    reader.readAsText(file);
+    await chrome.storage.local.set({
+        queue: allQueueItems,
+        currentIndex: 0,
+        isProcessing: true,
+        isPaused: false,
+        mode: 'download',
+        downloadTypes: downloadTypes,
+        dataType: 'csv_file',
+        currentParcelaNome: 'Iniciando...',
+        statusDetail: ''
+    });
+
+    chrome.runtime.sendMessage({ action: 'start_processing' });
 }
 
 async function loadLogs() {

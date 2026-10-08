@@ -9,7 +9,7 @@ Extensão para Google Chrome (**Manifest V3**) que automatiza a extração de da
 | Item | Detalhe |
 |------|---------|
 | Nome | SIGEF Extractor & Downloader |
-| Versão | 2.1 |
+| Versão | 2.2 |
 | Plataforma | Google Chrome / Microsoft Edge |
 | Arquitetura | Manifest V3 (Service Worker) |
 | Autor | Roberto Simões |
@@ -29,8 +29,20 @@ _[Espaço para imagem da aba de Extração]_
 1. O usuário digita códigos/CPF/CNPJ na caixa de texto (um por linha)
 2. Seleciona o tipo de dado (Código, CPF ou CNPJ)
 3. Clica em "EXTRAIR DADOS"
-4. A extensão abre uma aba, busca cada item no SIGEF, pagina pelos resultados
+4. A extensão abre uma aba e, para cada item:
+   - digita o valor no campo (`id_sncr` ou `id_cpf_cnpj`) de forma humana
+   - **aguarda os atributos `name` e `value` do input ficarem corretos** (o valor muda enquanto digita)
+   - espera um **delay aleatório de 3 a 5 segundos** e então clica em **Pesquisar**
+     (com *fallback* para `form.requestSubmit()` caso a cadeia de mouse não dispare o envio)
+   - aguarda o **DOM completo** (`readyState = complete`) antes de verificar os resultados
+   - só então decide: paginação ou próximo item da fila
 5. Gera um arquivo CSV consolidado com todos os dados encontrados
+
+**Robustez e diagnóstico:**
+- Retries de busca (3 tentativas) com recarga da página
+- Verificação de `Resultados: 0` apenas com a página totalmente carregada
+- Log de depuração detalhado (`DEBUG[...]`) na aba **Logs**, com cada fase da busca
+  (digitação, value, name, espera, clique, reação da página)
 
 **Dados extraídos por parcela:**
 - Nome da parcela
@@ -58,20 +70,25 @@ _[Espaço para imagem da aba de Download]_
 | SHP | Shapefile completo | `.zip` |
 
 **Como funciona:**
-1. Carrega o arquivo CSV gerado na etapa de extração
+1. Seleciona **um ou mais arquivos CSV** das parcelas (botão permite múltipla seleção)
 2. Marca os tipos de arquivo desejados (PDF, CSV, SHP)
 3. Clica em "INICIAR DOWNLOAD"
-4. Os arquivos são baixados automaticamente e organizados em pastas
+4. Todos os CSVs são adicionados **em fila** e baixados **um a um**, cada um em **sua própria pasta**
+   (o nome da pasta é o nome do arquivo CSV, sem a extensão)
 
 **Estrutura de pastas gerada:**
 ```
 Downloads/
-└── CODIGO_IMOVEL/
-    └── Nome_Parcela/
-          ├── Nome_Parcela_UUID_planta.pdf
-          ├── Nome_Parcela_UUID_memorial.pdf
-          ├── Nome_Parcela_UUID.csv
-          └── Nome_Parcela_UUID.zip
+├── 7010920297421/            ← pasta do arquivo 7010920297421.csv
+│   └── Nome_Parcela/
+│         ├── Nome_Parcela_UUID_planta.pdf
+│         ├── Nome_Parcela_UUID_memorial.pdf
+│         ├── Nome_Parcela_UUID.csv
+│         └── Nome_Parcela_UUID.zip
+├── 7010920297425/            ← pasta do arquivo 7010920297425.csv
+│   └── Nome_Parcela/
+│         └── ...
+└── ...
 ```
 
 ---
@@ -108,7 +125,9 @@ _[Espaço para imagem da aba de Logs]_
 **Recursos:**
 - Logs coloridos por nível (informação, sucesso, aviso, erro)
 - Timestamp em cada entrada
-- Limite de 500 registros (os mais antigos são removidos)
+- Escrita **serializada** (nenhuma mensagem se perde mesmo com várias entradas simultâneas)
+- Limite de 2000 registros (os mais antigos são removidos)
+- Linhas `DEBUG[...]` com o passo a passo da busca na página do SIGEF
 - Função para limpar e copiar logs
 
 ---
@@ -132,10 +151,10 @@ _[Espaço para imagem do fluxograma de ciclo do software]_
 4. Sistema busca, pagina e gera CSV consolidado
 
 ### Etapa 3 — Download
-1. Carregar CSV gerado na etapa anterior
+1. Selecionar um ou mais CSVs gerados na etapa anterior
 2. Selecionar tipos de arquivo (PDF/CSV/SHP)
 3. Iniciar download
-4. Arquivos organizados automaticamente em pastas
+4. Os itens entram em fila e são baixados um a um, cada CSV na sua pasta
 
 ### Etapa 4 — Mapa
 1. Selecionar pasta com CSVs de polígonos
@@ -171,11 +190,15 @@ _[Espaço para imagem do fluxograma de ciclo do software]_
 
 ```
 Downloader/
-├── manifest.json          # Configuração (permissões, metadados)
+├── manifest.json          # Configuração (permissões, metadados, ícones)
 ├── popup.html             # Interface do usuário (4 abas)
 ├── popup.js               # Lógica do popup e geração de mapas
 ├── background.js          # Service Worker (motor de automação)
 ├── content.js             # Script de simulação comportamental
+├── icon16.png             # Ícone 16x16
+├── icon32.png             # Ícone 32x32
+├── icon48.png             # Ícone 48x48
+├── icon128.png            # Ícone 128x128
 ├── README.md              # Esta documentação
 ├── DOCUMENTACAO_TECNICA.md # Documentação técnica detalhada
 └── LICENSE                # Licença
@@ -209,11 +232,13 @@ _[Espaço para imagem do diagrama de componentes]_
 
 ## Boas Práticas Implementadas
 
-- **Anti-detecção**: Digitação pausada, movimentos de mouse, delays aleatórios
+- **Anti-detecção**: Digitação pausada, movimentos de mouse, delays aleatórios (3–5s antes do clique)
+- **Confiabilidade**: Aguarda `name`/`value` do input e DOM completo antes de agir
+- **Diagnóstico**: Log DEBUG por fase + gravação serializada (sem mensagens perdidas)
 - **Tratamento de erros**: Retry com 3 tentativas, recuperação de abas
 - **Persistência**: Estado sobrevive ao fechamento do popup
 - **Segurança**: Permissões mínimas necessárias
-- **Organização**: Estrutura de pastas automática
+- **Organização**: Estrutura de pastas automática (um CSV = uma pasta)
 
 ---
 

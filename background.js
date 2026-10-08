@@ -2,15 +2,22 @@ const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
 const PARCELAS_URL = "https://sigef.incra.gov.br/consultar/parcelas";
 
-const MAX_LOGS = 500;
+const MAX_LOGS = 2000;
 
-async function appendLog(type, msg) {
+let logChain = Promise.resolve();
+
+function appendLog(type, msg) {
     const timestamp = new Date().toLocaleString('pt-BR');
     const entry = { timestamp, type, msg };
-    const { logs = [] } = await chrome.storage.local.get(["logs"]);
-    logs.push(entry);
-    if (logs.length > MAX_LOGS) logs.splice(0, logs.length - MAX_LOGS);
-    await chrome.storage.local.set({ logs });
+    logChain = logChain.then(async () => {
+        try {
+            const { logs = [] } = await chrome.storage.local.get(["logs"]);
+            logs.push(entry);
+            if (logs.length > MAX_LOGS) logs.splice(0, logs.length - MAX_LOGS);
+            await chrome.storage.local.set({ logs });
+        } catch (_) {}
+    });
+    return logChain;
 }
 
 function log(msg) {
@@ -144,6 +151,21 @@ function injectSearchInPage(dataType, formattedValue) {
     const rnd = (a, b) => a + Math.random() * (b - a);
     const sleep = (min, max) => new Promise(r => setTimeout(r, max != null ? rnd(min, max) : min));
 
+    window.__searchLog = [];
+    window.__searchResult = null;
+    window.__searchUrl = location.href;
+    window.__searchPhase = 'start';
+
+    const plog = (msg) => {
+        try {
+            const t = new Date().toLocaleTimeString('pt-BR');
+            window.__searchLog.push(`[${t}] ${msg}`);
+            console.log('[SIGEF-EXT] ' + msg);
+        } catch (_) {}
+    };
+
+    plog(`Injetado. dataType=${dataType}, valor esperado="${formattedValue}", url=${location.href}`);
+
     function dispatchMouseChain(el) {
         const r = el.getBoundingClientRect();
         const x = r.left + r.width / 2 + rnd(-4, 4);
@@ -154,6 +176,7 @@ function injectSearchInPage(dataType, formattedValue) {
         el.dispatchEvent(new MouseEvent("mousedown", base));
         el.dispatchEvent(new MouseEvent("mouseup", base));
         el.dispatchEvent(new MouseEvent("click", base));
+        plog(`Clique disparado em <${el.tagName.toLowerCase()}> type=${el.type || '-'} value="${el.value || ''}" coords=${Math.round(x)},${Math.round(y)} disabled=${!!el.disabled}`);
     }
 
     async function humanType(el, text) {
@@ -171,6 +194,7 @@ function injectSearchInPage(dataType, formattedValue) {
         }
         el.dispatchEvent(new Event("change", { bubbles: true }));
         await sleep(120, 350);
+        plog(`Digitacao concluida. value="${el.value}"`);
     }
 
     function hasErrorMessage() {
@@ -185,10 +209,18 @@ function injectSearchInPage(dataType, formattedValue) {
         if (alertEl) alertEl.remove();
     }
 
-    function isFieldFilled(input, expectedValue) {
-        if (!input) return false;
-        const val = input.value.trim();
-        return val.length > 0 && val === expectedValue;
+    function digits(v) {
+        return (v || '').replace(/\D/g, '');
+    }
+
+    function fieldMatches(inputEl, expectedValue) {
+        if (!inputEl) return false;
+        const val = (inputEl.value || '').trim();
+        if (!val) return false;
+        if (val === expectedValue) return true;
+        const dVal = digits(val);
+        const dExp = digits(expectedValue);
+        return dExp.length > 0 && dVal === dExp;
     }
 
     const fieldId = (dataType === 'cpf' || dataType === 'cnpj') ? 'id_cpf_cnpj' : 'id_sncr';
@@ -196,58 +228,153 @@ function injectSearchInPage(dataType, formattedValue) {
     const btn = document.querySelector("#pesquisaForm button[type=\"submit\"]")
         || document.querySelector("button[value=\"Pesquisar\"]");
 
+    plog(`Campo id="${fieldId}" encontrado=${!!input}` + (input ? ` name="${input.name || '(vazio)'}"` : ''));
+    plog(`Botao Pesquisar encontrado=${!!btn}` + (btn ? ` (${btn.tagName} class="${btn.className}")` : ''));
+
     if (!input || !btn) {
+        window.__searchPhase = 'element_not_found';
         window.__searchResult = { success: false, reason: 'element_not_found' };
+        plog('ABORTADO: elementos nao encontrados.');
         return;
     }
 
     clearErrorMessage();
+    window.__searchPhase = 'typing';
+    plog('Iniciando digitacao...');
 
-    humanType(input, formattedValue).then(async () => {
-        await sleep(300, 600);
-
-        if (!isFieldFilled(input, formattedValue)) {
-            input.value = formattedValue;
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            input.dispatchEvent(new Event("change", { bubbles: true }));
-            await sleep(200, 400);
-        }
-
-        if (!isFieldFilled(input, formattedValue)) {
-            window.__searchResult = { success: false, reason: 'field_not_filled' };
-            return;
-        }
-
-        dispatchMouseChain(btn);
-
-        await sleep(2000, 3000);
-
-        if (hasErrorMessage()) {
-            clearErrorMessage();
-            await sleep(500, 800);
-            input.value = '';
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            await sleep(200, 400);
-
+    (async () => {
+        try {
             await humanType(input, formattedValue);
+            window.__searchPhase = 'waiting_value';
             await sleep(300, 600);
 
-            if (isFieldFilled(input, formattedValue)) {
-                dispatchMouseChain(btn);
-                await sleep(2000, 3000);
+            // Fase 1: aguarda o value do input ficar correto
+            let valueOk = fieldMatches(input, formattedValue);
+            for (let i = 0; i < 16 && !valueOk; i++) {
+                await sleep(200, 350);
+                valueOk = fieldMatches(input, formattedValue);
+            }
+            plog(`Value apos espera: "${input.value}" (correto=${valueOk})`);
 
-                if (hasErrorMessage()) {
-                    window.__searchResult = { success: false, reason: 'error_after_retry' };
-                    return;
-                }
-            } else {
-                window.__searchResult = { success: false, reason: 'field_not_filled_after_retry' };
+            if (!valueOk) {
+                plog('Value incorreto, forçando preenchimento direto...');
+                input.value = formattedValue;
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                input.dispatchEvent(new Event("change", { bubbles: true }));
+                await sleep(400, 700);
+                valueOk = fieldMatches(input, formattedValue);
+                plog(`Value apos forcado: "${input.value}" (correto=${valueOk})`);
+            }
+
+            if (!valueOk) {
+                window.__searchPhase = 'value_not_ok';
+                window.__searchResult = { success: false, reason: 'field_not_filled' };
+                plog('ABORTADO: value do campo incorreto.');
                 return;
             }
-        }
 
-        window.__searchResult = { success: true };
-    });
+            // Fase 2: aguarda o atributo name (informativo - NAO bloqueia o clique)
+            window.__searchPhase = 'waiting_name';
+            let hasName = !!input.name;
+            if (!hasName) {
+                plog('Atributo name ausente, aguardando ate 4s para aparecer...');
+                for (let i = 0; i < 10 && !hasName; i++) {
+                    await sleep(200, 350);
+                    hasName = !!input.name;
+                }
+            }
+            plog(`Atributo name="${input.name || '(vazio)'}" (presente=${hasName}) - seguindo para o clique mesmo assim`);
+
+            // Fase 3: delay aleatorio de 3 a 5 segundos antes do clique
+            window.__searchPhase = 'waiting_before_click';
+            const waitMs = Math.floor(rnd(3000, 5000));
+            plog(`Aguardando ${waitMs}ms antes de clicar em Pesquisar...`);
+            await sleep(waitMs);
+
+            window.__searchPhase = 'clicking';
+            const urlBeforeClick = location.href;
+            plog(`CLICANDO em Pesquisar agora... (url antes: ${urlBeforeClick})`);
+            dispatchMouseChain(btn);
+            plog('Clique enviado (cadeia de mouse). Aguardando reacao da pagina...');
+
+            await sleep(2500, 3500);
+
+            plog(`Apos clique: url=${location.href}, urlMudou=${location.href !== urlBeforeClick}, readyState=${document.readyState}, temErro=${hasErrorMessage()}`);
+
+            if (location.href === urlBeforeClick && !hasErrorMessage()) {
+                const h3Now = document.querySelector('h3')?.innerText || '';
+                const h4Now = document.querySelector('h4')?.innerText || '';
+                const rowsNow = document.querySelectorAll('table tbody tr').length;
+                const alreadyResults = rowsNow > 0 || /(resultados|total)\s*:\s*\d+/i.test(`${h3Now} ${h4Now}`);
+                plog(`Reacao ausente. rowsTabela=${rowsNow}, h3="${h3Now.trim()}", jaHaResultados=${alreadyResults}`);
+                if (!alreadyResults) {
+                    plog('NENHUMA REACAO detectada apos cadeia de mouse - usando click nativo (fallback)...');
+                    try {
+                        if (btn.form && typeof btn.form.requestSubmit === 'function') {
+                            btn.form.requestSubmit(btn);
+                            plog('fallback: form.requestSubmit() chamado');
+                        } else {
+                            btn.click();
+                            plog('fallback: btn.click() chamado');
+                        }
+                    } catch (fbErr) {
+                        plog('fallback falhou: ' + (fbErr && fbErr.message ? fbErr.message : fbErr));
+                    }
+                    await sleep(2500, 3500);
+                    plog(`Apos fallback: url=${location.href}, urlMudou=${location.href !== urlBeforeClick}, readyState=${document.readyState}, temErro=${hasErrorMessage()}`);
+                } else {
+                    plog('Resultados ja presentes - fallback nao necessario');
+                }
+            }
+
+            if (hasErrorMessage()) {
+                plog('Erro "Nenhum dos termos..." detectado - tentando novamente...');
+                clearErrorMessage();
+                await sleep(500, 800);
+                input.value = '';
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                await sleep(200, 400);
+
+                await humanType(input, formattedValue);
+                await sleep(300, 600);
+
+                if (!fieldMatches(input, formattedValue)) {
+                    input.value = formattedValue;
+                    input.dispatchEvent(new Event("input", { bubbles: true }));
+                    input.dispatchEvent(new Event("change", { bubbles: true }));
+                    await sleep(400, 700);
+                }
+
+                if (fieldMatches(input, formattedValue)) {
+                    const wait2 = Math.floor(rnd(3000, 5000));
+                    plog(`2a tentativa: aguardando ${wait2}ms e clicando...`);
+                    await sleep(wait2);
+                    dispatchMouseChain(btn);
+                    await sleep(2000, 3000);
+
+                    if (hasErrorMessage()) {
+                        window.__searchPhase = 'error_after_retry';
+                        window.__searchResult = { success: false, reason: 'error_after_retry' };
+                        plog('ABORTADO: erro persistiu apos 2a tentativa.');
+                        return;
+                    }
+                } else {
+                    window.__searchPhase = 'field_not_filled_after_retry';
+                    window.__searchResult = { success: false, reason: 'field_not_filled_after_retry' };
+                    plog('ABORTADO: value incorreto na 2a tentativa.');
+                    return;
+                }
+            }
+
+            window.__searchPhase = 'done';
+            window.__searchResult = { success: true };
+            plog('Sucesso: busca submetida.');
+        } catch (err) {
+            window.__searchPhase = 'chain_error';
+            window.__searchResult = { success: false, reason: 'chain_error: ' + (err && err.message ? err.message : String(err)) };
+            plog('EXCECAO na cadeia: ' + (err && err.stack ? err.stack : err));
+        }
+    })();
 }
 
 /* ===========================
@@ -260,6 +387,14 @@ function extractParcelasFromPage() {
     ));
     const data = [];
     let foundHistorico = false;
+
+    const h3Text = document.querySelector("h3")?.innerText || "";
+    const h4Text = document.querySelector("h4")?.innerText || "";
+    const zeroResults = rows.length === 0
+        && (/resultados\s*:\s*0/i.test(h3Text) || /total\s*:\s*0/i.test(h4Text));
+    if (zeroResults) {
+        return { data: [], next: false, nextHref: null, zeroResults: true };
+    }
 
     for (const row of rows) {
         const tds = row.querySelectorAll("td");
@@ -380,7 +515,7 @@ function extractParcelasFromPage() {
 }
 
 function checkPageLoaded() {
-    if (document.readyState === "loading") return { loaded: false, searchError: false };
+    if (document.readyState !== "complete") return { loaded: false, searchError: false };
 
     const errorAlert = document.querySelector('.alert.alert-error');
     if (errorAlert) {
@@ -399,12 +534,32 @@ function checkPageLoaded() {
         || /\bResultados:\s*0\b/i.test(h3)
         || /\bTotal:\s*0\b/i.test(h3);
     const hasPagination = !!document.querySelector(".pagination");
-    const loaded = tableRows.length > 0 || noResults || hasPagination;
+    const hasResultsHeading = /(resultados|total)\s*:\s*\d+/i.test(`${h3} ${h4}`);
+    const loaded = tableRows.length > 0 || noResults || hasPagination || hasResultsHeading;
     return { loaded, searchError: false };
 }
 
 function getSearchResult() {
-    return window.__searchResult || null;
+    if (window.__searchResult) return window.__searchResult;
+    if (!('__searchUrl' in window)) {
+        return { success: true, reason: 'navigated' };
+    }
+    return null;
+}
+
+function getSearchDebug() {
+    return {
+        phase: (window.__searchPhase || null),
+        hasResult: !!window.__searchResult,
+        result: (window.__searchResult || null),
+        url: location.href,
+        readyState: document.readyState,
+        log: (window.__searchLog || []).slice(-40)
+    };
+}
+
+function clearSearchResult() {
+    window.__searchResult = null;
 }
 
 function clearSearchError() {
@@ -427,6 +582,10 @@ async function safeExtractorScript(tabRef, dataType, formattedValue, func, args)
             });
         } catch (err) {
             if (!isNoTabError(err)) throw err;
+            const st = await chrome.storage.local.get(["isProcessing"]);
+            if (!st.isProcessing) {
+                throw err;
+            }
             logWarn(`Tentativa ${attempt + 1}: Aba invalida, recriando...`);
             try { await chrome.tabs.remove(tabRef.id); } catch (_) {}
             const t = await chrome.tabs.create({ url: PARCELAS_URL, active: true });
@@ -443,6 +602,33 @@ async function safeExtractorScript(tabRef, dataType, formattedValue, func, args)
         }
     }
     throw new Error("Nao foi possivel usar a aba apos recriar.");
+}
+
+async function dumpSearchDebug(tabRef, dataType, formattedValue, label, full = true) {
+    try {
+        const r = await chrome.scripting.executeScript({
+            target: { tabId: tabRef.id },
+            func: getSearchDebug,
+            args: []
+        });
+        const dbg = r?.[0]?.result;
+        if (!dbg) {
+            logWarn(`DEBUG[${label}]: sem retorno da pagina`);
+            return;
+        }
+        log(`DEBUG[${label}]: phase=${dbg.phase || '-'} | hasResult=${dbg.hasResult} | readyState=${dbg.readyState} | url=${dbg.url}`);
+        if (dbg.result) {
+            log(`DEBUG[${label}]: result=${JSON.stringify(dbg.result)}`);
+        }
+        const lines = dbg.log || [];
+        const selected = full ? lines : lines.slice(-5);
+        selected.forEach((line, i) => log(`DEBUG[${label}] #${i + 1}: ${line}`));
+        if (!full && lines.length > selected.length) {
+            log(`DEBUG[${label}]: (... ${lines.length - selected.length} linhas anteriores omitidas)`);
+        }
+    } catch (err) {
+        logWarn(`DEBUG[${label}]: nao foi possivel ler log da pagina - ${err.message}`);
+    }
 }
 
 async function downloadExtractCsvBlob(folderName, csvContent) {
@@ -527,7 +713,16 @@ async function processQueue() {
             break;
         }
 
-        const currentLine = queue[currentIndex].trim();
+        let currentLine;
+        let currentCodigoImovel = codigoImovel;
+        
+        if (mode === 'download' && typeof queue[currentIndex] === 'object') {
+            currentLine = queue[currentIndex].line;
+            currentCodigoImovel = queue[currentIndex].codigoImovel || codigoImovel;
+        } else {
+            currentLine = typeof queue[currentIndex] === 'string' ? queue[currentIndex].trim() : (queue[currentIndex].line || '').trim();
+        }
+        
         const formatted = formatValue(currentLine, dataType);
         const nomeParcela = currentLine.split(';')[0] || currentLine;
 
@@ -546,7 +741,7 @@ async function processQueue() {
             if (mode === 'extract') {
                 await executeExtractorLogic(currentLine, formatted, currentLine.trim(), dataType);
             } else if (mode === 'download') {
-                await executeDownloadLogic(currentLine, codigoImovel, downloadTypes);
+                await executeDownloadLogic(currentLine, currentCodigoImovel, downloadTypes);
             }
 
             logSuccess(`[${currentIndex + 1}/${queue.length}] Concluido: ${nomeParcela}`);
@@ -604,26 +799,57 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
         }
     }
 
-    await delay(2000);
+    await delay(randomDelayMs(1500, 2500));
     log('Injetando script de busca na pagina...');
 
     const MAX_SEARCH_RETRIES = 3;
     let searchSuccess = false;
 
     for (let searchAttempt = 0; searchAttempt < MAX_SEARCH_RETRIES; searchAttempt++) {
+        const stSearch = await chrome.storage.local.get(["isProcessing"]);
+        if (!stSearch.isProcessing) {
+            logWarn('Processamento parado pelo usuario - abortando busca');
+            break;
+        }
         if (searchAttempt > 0) {
             log(`Tentativa ${searchAttempt + 1}/${MAX_SEARCH_RETRIES} de busca...`);
             await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Tentativa ${searchAttempt + 1} de busca...` });
             try { await chrome.tabs.reload(tabRef.id); } catch (_) {}
             await waitTabComplete(tabRef.id, 30000);
-            await delay(2000);
+            await delay(randomDelayMs(1500, 2500));
         }
 
+        await safeExtractorScript(tabRef, dataType, formattedValue, clearSearchResult, []);
         await safeExtractorScript(tabRef, dataType, formattedValue, injectSearchInPage, [dataType, formattedValue]);
-        await delay(4000);
+        log(`DEBUG[ tentativa ${searchAttempt + 1} ] script de busca injetado`);
 
-        const searchResult = await safeExtractorScript(tabRef, dataType, formattedValue, getSearchResult, []);
-        const result = searchResult?.[0]?.result;
+        let result = null;
+        for (let poll = 0; poll < 45; poll++) {
+            await delay(1000);
+            const stPoll = await chrome.storage.local.get(["isProcessing"]);
+            if (!stPoll.isProcessing) {
+                result = { success: false, reason: 'stopped' };
+                break;
+            }
+            try {
+                const searchResult = await safeExtractorScript(tabRef, dataType, formattedValue, getSearchResult, []);
+                result = searchResult?.[0]?.result;
+                if (result) break;
+                if (poll === 4 || poll === 9 || poll === 14) {
+                    await dumpSearchDebug(tabRef, dataType, formattedValue, `tentativa ${searchAttempt + 1} aguardando ${poll + 1}s`, false);
+                }
+            } catch (_) {
+                result = { success: true, reason: 'navigated' };
+                break;
+            }
+        }
+
+        await dumpSearchDebug(tabRef, dataType, formattedValue, `tentativa ${searchAttempt + 1} fim`);
+
+        if (result && result.success && result.reason === 'navigated') {
+            log('Navegação para página de resultados detectada, aguardando DOM completo...');
+            await waitTabComplete(tabRef.id, 45000);
+        }
 
         if (result && result.success) {
             searchSuccess = true;
@@ -638,9 +864,19 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
             logWarn('Elementos de busca nao encontrados na pagina, abortando');
             break;
         }
+
+        if (reason === 'stopped') {
+            logWarn('Busca interrompida pelo usuario');
+            break;
+        }
     }
 
     if (!searchSuccess) {
+        const stEnd = await chrome.storage.local.get(["isProcessing"]);
+        if (!stEnd.isProcessing) {
+            logWarn('Extracao encerrada: processamento parado pelo usuario');
+            return;
+        }
         logWarn(`Busca nao foi bem-sucedida apos ${MAX_SEARCH_RETRIES} tentativas, prosseguindo com verificacao...`);
     }
 
@@ -651,30 +887,40 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
     let lastPageUrl = null;
     const MAX_RETRIES_PER_PAGE = 3;
 
-    await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Paginando...` });
+    // Aguarda DOM completo antes de iniciar verificação de resultados
+    await delay(3000);
+    await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Aguardando resultados...` });
     log('Aguardando resultados da busca...');
 
     while (hasNext) {
+        const stNow = await chrome.storage.local.get(["isProcessing"]);
+        if (!stNow.isProcessing) {
+            logWarn('Processamento parado pelo usuario - saindo da paginacao');
+            break;
+        }
         log(`Processando página ${pageNum}...`);
         await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Página ${pageNum} (${allData.length} parcelas)` });
 
         let loaded = false;
         let searchErrorDetected = false;
-        for (let i = 0; i < 30; i++) {
-            const check = await safeExtractorScript(tabRef, dataType, formattedValue, checkPageLoaded, []);
-            const checkResult = check[0]?.result;
-            if (checkResult) {
-                if (checkResult.searchError) {
-                    searchErrorDetected = true;
-                    logWarn(`Erro de busca detectado na página ${pageNum}: campo não preenchido`);
-                    break;
+        for (let i = 0; i < 90; i++) {
+            try {
+                const check = await safeExtractorScript(tabRef, dataType, formattedValue, checkPageLoaded, []);
+                const checkResult = check[0]?.result;
+                if (checkResult) {
+                    if (checkResult.searchError) {
+                        searchErrorDetected = true;
+                        logWarn(`Erro de busca detectado na página ${pageNum}: campo não preenchido`);
+                        break;
+                    }
+                    if (checkResult.loaded) {
+                        loaded = true;
+                        break;
+                    }
                 }
-                if (checkResult.loaded) {
-                    loaded = true;
-                    break;
-                }
+            } catch (_) {
             }
-            await delay(1000);
+            await delay(randomDelayMs(800, 1200));
         }
 
         if (searchErrorDetected) {
@@ -684,42 +930,55 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
             await safeExtractorScript(tabRef, dataType, formattedValue, clearSearchError, []);
             await delay(500);
 
+            await safeExtractorScript(tabRef, dataType, formattedValue, clearSearchResult, []);
             await safeExtractorScript(tabRef, dataType, formattedValue, injectSearchInPage, [dataType, formattedValue]);
-            await delay(4000);
+            await delay(randomDelayMs(3500, 5000));
 
             let retryLoaded = false;
-            for (let i = 0; i < 30; i++) {
-                const check = await safeExtractorScript(tabRef, dataType, formattedValue, checkPageLoaded, []);
-                const checkResult = check[0]?.result;
-                if (checkResult && checkResult.loaded && !checkResult.searchError) {
-                    retryLoaded = true;
-                    break;
+            for (let i = 0; i < 90; i++) {
+                try {
+                    const check = await safeExtractorScript(tabRef, dataType, formattedValue, checkPageLoaded, []);
+                    const checkResult = check[0]?.result;
+                    if (checkResult && checkResult.loaded && !checkResult.searchError) {
+                        retryLoaded = true;
+                        break;
+                    }
+                    if (checkResult && checkResult.searchError) {
+                        await safeExtractorScript(tabRef, dataType, formattedValue, clearSearchError, []);
+                        await delay(500);
+                        await safeExtractorScript(tabRef, dataType, formattedValue, clearSearchResult, []);
+                        await safeExtractorScript(tabRef, dataType, formattedValue, injectSearchInPage, [dataType, formattedValue]);
+                        await delay(randomDelayMs(3500, 5000));
+                    }
+                } catch (_) {
                 }
-                if (checkResult && checkResult.searchError) {
-                    await safeExtractorScript(tabRef, dataType, formattedValue, clearSearchError, []);
-                    await delay(500);
-                    await safeExtractorScript(tabRef, dataType, formattedValue, injectSearchInPage, [dataType, formattedValue]);
-                    await delay(4000);
-                }
-                await delay(1000);
+                await delay(randomDelayMs(800, 1200));
             }
             loaded = retryLoaded;
         }
 
         if (!loaded) {
-            logWarn(`Página ${pageNum} não carregou em 30s, recarregando...`);
+            logWarn(`Página ${pageNum} não carregou em 90s, recarregando...`);
             try { await chrome.tabs.reload(tabRef.id); } catch (_) {}
             await waitTabComplete(tabRef.id, 30000);
-            await delay(2000);
-            const check2 = await safeExtractorScript(tabRef, dataType, formattedValue, checkPageLoaded, []);
-            const check2Result = check2[0]?.result;
+            await delay(randomDelayMs(1500, 2500));
+            let check2Result = null;
+            for (let i = 0; i < 60; i++) {
+                try {
+                    const check2 = await safeExtractorScript(tabRef, dataType, formattedValue, checkPageLoaded, []);
+                    check2Result = check2[0]?.result;
+                    if (check2Result && check2Result.loaded && !check2Result.searchError) break;
+                } catch (_) {
+                }
+                await delay(randomDelayMs(1000, 1500));
+            }
             if (!check2Result || !check2Result.loaded || check2Result.searchError) {
                 logWarn(`Página ${pageNum} não carregou após reload, parando paginação`);
                 break;
             }
         }
 
-        await delay(1000);
+        await delay(randomDelayMs(1000, 1500));
 
         let res = null;
         let extractionOk = false;
@@ -735,7 +994,7 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
             await chrome.storage.local.set({ statusDetail: `Extraindo: ${rawValue} - Recarregando página ${pageNum} (tentativa ${retry + 1})...` });
             try { await chrome.tabs.reload(tabRef.id); } catch (_) {}
             await waitTabComplete(tabRef.id, 30000);
-            await delay(3000);
+            await delay(randomDelayMs(2500, 3500));
         }
 
         if (!extractionOk || !res) {
@@ -775,7 +1034,7 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
                 await chrome.storage.local.set({ extractorTabId: tabRef.id });
             }
             await waitTabComplete(tabRef.id, 30000);
-            await delay(randomDelayMs(1000, 2500));
+            await delay(randomDelayMs(2000, 3000));
             pageNum++;
 
             let navigated = false;
@@ -794,7 +1053,7 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
                     try { await chrome.tabs.reload(tabRef.id); } catch (_) {}
                 }
                 await waitTabComplete(tabRef.id, 30000);
-                await delay(2000);
+                await delay(randomDelayMs(2000, 3000));
             }
             if (!navigated) {
                 logWarn('Não foi possível navegar para próxima página após 3 tentativas, parando');
