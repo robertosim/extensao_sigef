@@ -31,7 +31,7 @@ Extrair dados cadastrais de parcelas do SIGEF a partir de códigos de imóvel, C
 4. A extensão abre uma aba e, para cada item:
    - digita o valor no campo (`id_sncr` ou `id_cpf_cnpj`) de forma humana
    - **aguarda os atributos `name` e `value` do input ficarem corretos** (o valor muda enquanto digita)
-   - espera um **delay aleatório de 3 a 5 segundos** e então clica em **Pesquisar**
+   - espera um **delay aleatório de 1 a 3 segundos** e então clica em **Pesquisar**
      (com *fallback* para `form.requestSubmit()` caso a cadeia de mouse não dispare o envio)
    - aguarda o **DOM completo** (`readyState = complete`) antes de verificar os resultados
    - só então decide: paginação ou próximo item da fila
@@ -40,6 +40,7 @@ Extrair dados cadastrais de parcelas do SIGEF a partir de códigos de imóvel, C
 **Robustez e diagnóstico:**
 - Retries de busca (3 tentativas) com recarga da página
 - Verificação de `Resultados: 0` apenas com a página totalmente carregada
+- Busca com **`Resultados: 0` → nenhum CSV é baixado** para esse código (só baixa com resultados > 0)
 - Log de depuração detalhado (`DEBUG[...]`) na aba **Logs**, com cada fase da busca
   (digitação, value, name, espera, clique, reação da página)
 
@@ -227,7 +228,7 @@ Downloader/
 
 ## Boas Práticas Implementadas
 
-- **Anti-detecção**: Digitação pausada, movimentos de mouse, delays aleatórios (3–5s antes do clique)
+- **Anti-detecção**: Digitação pausada, movimentos de mouse, delays aleatórios (1–3s antes do clique)
 - **Confiabilidade**: Aguarda `name`/`value` do input e DOM completo antes de agir
 - **Diagnóstico**: Log DEBUG por fase + gravação serializada (sem mensagens perdidas)
 - **Tratamento de erros**: Retry com 3 tentativas, recuperação de abas

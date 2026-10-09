@@ -188,6 +188,9 @@ Fazenda B;"MULTIPOLYGON(((...)))";qrcode456;...
 
 **Função**: `downloadExtractCsvBlob()` em `background.js:634`
 
+**Zero resultados**: se a busca retornar `Resultados: 0`, **nenhum CSV é baixado** para esse código
+(log `Busca sem resultados (0) - CSV de {codigo} NAO sera baixado`). O download só ocorre com resultados > 0.
+
 #### 3.4.2 Downloads de Documentos
 **Estrutura de Pastas** (um CSV = uma pasta raiz):
 ```
@@ -263,7 +266,7 @@ Fluxo completo (com **fases** registradas em `window.__searchPhase` e log por pa
                             igualdade de dígitos); se não, força preenchimento
 3. Espera do NAME        → até ~4s pelo atributo name do input
                            ⚠ apenas informativo: NÃO bloqueia o clique
-4. Delay anti-bot        → aleatório de 3000 a 5000ms antes de clicar
+4. Delay anti-bot        → aleatório de 1000 a 3000ms antes de clicar
 5. Clique (cadeia mouse) → mouseover → mousemove → mousedown → mouseup → click
 6. Verificação de reação → compara URL antes/depois + alerta de erro + tabela/h3
 7. Fallback (se necessário) → form.requestSubmit(btn) ou btn.click()
@@ -395,7 +398,7 @@ area_ha = area_km2 * 100
 - **Graceful Degradation**: Continua fila mesmo com erro individual
 
 ### 5.3 Anti-Detecção
-- Delays aleatórios (human-like), incluindo **3000–5000ms entre o preenchimento e o clique**
+- Delays aleatórios (human-like), incluindo **1000–3000ms entre o preenchimento e o clique**
 - Digitação caractere a caractere
 - Cadeia completa de eventos de mouse (+ fallback de clique nativo)
 - Espera dos atributos `name`/`value` do input antes de submeter
@@ -453,7 +456,7 @@ area_ha = area_km2 * 100
 - [ ] Clique observado nos logs `DEBUG[...]` (fase `clicking`)
 - [ ] Paginação múltipla (>1 página)
 - [ ] "Parcela no histórico" detectada
-- [ ] Zero resultados (CSV vazio gerado)
+- [ ] Zero resultados (nenhum CSV é baixado)
 - [ ] Pausar/Retomar durante extração
 - [ ] Parar e limpar fila (sem recriar aba)
 
