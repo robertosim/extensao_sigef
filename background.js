@@ -285,9 +285,9 @@ function injectSearchInPage(dataType, formattedValue) {
             }
             plog(`Atributo name="${input.name || '(vazio)'}" (presente=${hasName}) - seguindo para o clique mesmo assim`);
 
-            // Fase 3: delay aleatorio de 1 a 3 segundos antes do clique
+            // Fase 3: delay aleatorio de 3 a 5 segundos antes do clique
             window.__searchPhase = 'waiting_before_click';
-            const waitMs = Math.floor(rnd(1000, 3000));
+            const waitMs = Math.floor(rnd(3000, 5000));
             plog(`Aguardando ${waitMs}ms antes de clicar em Pesquisar...`);
             await sleep(waitMs);
 
@@ -346,7 +346,7 @@ function injectSearchInPage(dataType, formattedValue) {
                 }
 
                 if (fieldMatches(input, formattedValue)) {
-                    const wait2 = Math.floor(rnd(1000, 3000));
+                    const wait2 = Math.floor(rnd(3000, 5000));
                     plog(`2a tentativa: aguardando ${wait2}ms e clicando...`);
                     await sleep(wait2);
                     dispatchMouseChain(btn);
