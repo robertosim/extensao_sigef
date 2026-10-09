@@ -10,3 +10,6 @@ desktop.ini
 
 # OS
 .DS_Store
+
+# Build da Chrome Web Store
+dist/
