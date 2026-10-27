@@ -5,8 +5,8 @@
 ### 1.1 Stack Tecnológica
 - **Manifest Version**: 3 (Service Worker)
 - **Linguagem**: JavaScript (ES2020+)
-- **APIs Chrome Extension**: `chrome.downloads`, `chrome.tabs`, `chrome.scripting`, `chrome.storage`, `chrome.webNavigation`
-- **Bibliotecas Externas**: Leaflet.js (CDN) para geração de mapas
+- **APIs Chrome Extension**: `chrome.downloads`, `chrome.tabs`, `chrome.scripting`, `chrome.storage`
+- **Bibliotecas**: Leaflet.js 1.9.4 empacotada localmente em `lib/` e embutida no HTML do mapa gerado (nenhum código é carregado de servidores externos, conforme políticas do Manifest V3)
 - **Compatibilidade**: Google Chrome 88+, Edge 88+
 
 ### 1.2 Estrutura de Arquivos
@@ -22,12 +22,27 @@ Downloader/
 │   ├── icon32.png         # Ícone 32x32
 │   ├── icon48.png         # Ícone 48x48
 │   └── icon128.png        # Ícone 128x128
+├── lib/                   # Bibliotecas locais (sem CDN)
+│   ├── leaflet.js         # Leaflet 1.9.4 (embutido no HTML gerado)
+│   └── leaflet.css        # Estilos do Leaflet (embutidos no HTML gerado)
 ├── assets/                # Imagens do README (telas e diagramas)
+├── scripts/               # Scripts de automação
+│   └── pack.ps1           # Gera o ZIP da Chrome Web Store em dist/
+├── dist/                  # ZIPs de publicação (gerado pelo pack.ps1, não versionado)
 ├── .gitattributes         # Marca PNGs como binários (evita corrupção por CRLF)
+├── .gitignore             # Arquivos ignorados pelo Git (dist/, editores, SO)
 ├── README.md              # Documentação de usuário
 ├── DOCUMENTACAO_TECNICA.md # Esta documentação
 └── LICENSE                # Licença do projeto
 ```
+
+### 1.3 Empacotamento e Distribuição
+- Script: `scripts/pack.ps1` — lê a versão do `manifest.json` e gera
+  `dist/sigef-extractor-v{versão}.zip`
+- O pacote contém apenas: `manifest.json`, `background.js`, `popup.html`, `popup.js`,
+  `content.js`, `LICENSE`, `icons/` e `lib/` (nenhum arquivo de documentação ou imagem de README)
+- Uso: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\pack.ps1`
+- `dist/` está no `.gitignore` (os ZIPs não são versionados)
 
 ---
 
@@ -39,6 +54,9 @@ Downloader/
    - `chrome.runtime.onMessage` - Comandos do popup
    - `chrome.storage.onChanged` - Monitora pausa/parada
 3. **Popup Carregado**: `popup.html` + `popup.js` inicializam UI
+   - `checkServiceWorkerVersion()` (`popup.js:78`) compara a versão do popup com a do Service
+     Worker (ação `sw_version`); se divergir (código antigo em execução) ou o SW não responder,
+     exibe banner vermelho pedindo recarga em `chrome://extensions`
 4. **Estado Restaurado**: `chrome.storage.local.get()` recupera fila, índice, modo
 
 ### 2.2 Fluxo Principal (Process Queue)
@@ -123,6 +141,9 @@ executeExtractorLogic  executeDownloadLogic
 25372342000163
 ```
 
+**Campo adicional**: `Pasta de saida (criada em Downloads)` — nome da pasta que receberá os CSVs
+extraídos e os documentos baixados (ver seção 3.4.0). Obrigatório para iniciar.
+
 **Tipos Suportados**:
 | Tipo | Formatação Aplicada | Exemplo Entrada | Exemplo Formatado |
 |------|---------------------|-----------------|-------------------|
@@ -130,7 +151,7 @@ executeExtractorLogic  executeDownloadLogic
 | CPF | 11 dígitos, zero à esquerda | `84617284915` | `84617284915` |
 | CNPJ | 14 dígitos, zero à esquerda | `25372342000163` | `25372342000163` |
 
-**Função**: `formatValue(value, dataType)` em `background.js:92`
+**Função**: `formatValue(value, dataType)` em `background.js:103`
 
 ### 3.2 Entrada - Aba Download
 **Arquivo(s)**: um ou mais CSVs com separador `;` (seleção múltipla, `input[multiple]`)
@@ -158,11 +179,20 @@ queue = [
 - Processamento: **um item por vez**, na ordem dos arquivos selecionados
 - `codigoImovel` = nome do arquivo CSV sem `.csv` → vira a pasta raiz do download
 
-**Funções**: `startDownload()` em `popup.js:94`, desempacotamento em `processQueue()` em `background.js:702`
-**Função**: `parseParcelaUuidFromLine()` em `background.js:101`
+**Funções**: `startDownload()` em `popup.js:179`, desempacotamento em `processQueue()` em `background.js:733`
+**Função**: `parseParcelaUuidFromLine()` em `background.js:112`
 
-### 3.3 Entrada - Aba Gerar Mapa
+**Intervalo entre downloads**: mínimo **fixo em 3 segundos** (`MIN_DOWNLOAD_INTERVAL = 3`, campo
+`readonly` — o usuário só edita o máximo, que deve ser `≥ 3`). A espera é um valor aleatório entre o
+mínimo e o máximo, **para evitar sobrecarga do servidor ou bloqueio**
+(`getRandomDownloadDelayMs()` em `background.js:157`).
+
+### 3.3 Entrada - Aba Map
 **Entrada**: Pasta (webkitdirectory) com arquivos `.csv` recursivos
+
+**Pasta de saída exibida**: a aba mostra o `outputFolder` gravado na extração
+(ex.: `Pasta de saida: AMANDA SOUZA RODRIGUES - selecione essa pasta (em Downloads) ao gerar o mapa.`),
+para orientar o usuário a selecionar a mesma pasta no seletor de diretórios.
 
 **Formato CSV Esperado**:
 ```csv
@@ -176,9 +206,17 @@ Fazenda B;"MULTIPOLYGON(((...)))";qrcode456;...
 - QRCODE: `QRCODE`, `QR_CODE`
 - NOME: `NOME`, `NAME`
 
-**Função**: `parseCsvFile()` em `popup.js:289`
+**Função**: `parseCsvFile()` em `popup.js:390`
 
 ### 3.4 Saída - Arquivos Gerados
+
+#### 3.4.0 Pasta de Saída (`outputFolder`)
+Antes de extrair ou baixar, o usuário informa o **nome da pasta de saída** em um campo do popup
+(aba **Extração** e aba **Download**; o valor é o mesmo nos dois campos, salvo em
+`chrome.storage.local.outputFolder` e sanitizado por `sanitizeFolderName()` em `background.js:81`).
+A pasta é criada dentro de `Downloads/` (criação automática pelo `chrome.downloads` no primeiro
+arquivo salvo) e todos os arquivos da extração e dos downloads ficam sob ela.
+Caracteres inválidos para nomes de pasta (`\ / : * ? " < > |`) são removidos; espaços são colapsados.
 
 #### 3.4.1 CSV de Extração
 ```
@@ -186,24 +224,27 @@ Fazenda B;"MULTIPOLYGON(((...)))";qrcode456;...
 "Fazenda Santa Maria";"a1b2c3d4-e5f6-7890-abcd-ef1234567890";"123,45";"João Silva";"123456";"7890"
 ```
 
-**Função**: `downloadExtractCsvBlob()` em `background.js:634`
+**Caminho**: `Downloads/{PASTA_SAIDA}/{CODIGO}.csv`
+
+**Função**: `downloadExtractCsvBlob()` em `background.js:661`
 
 **Zero resultados**: se a busca retornar `Resultados: 0`, **nenhum CSV é baixado** para esse código
 (log `Busca sem resultados (0) - CSV de {codigo} NAO sera baixado`). O download só ocorre com resultados > 0.
 
 #### 3.4.2 Downloads de Documentos
-**Estrutura de Pastas** (um CSV = uma pasta raiz):
+**Estrutura de Pastas** (um CSV = uma pasta; tudo sob a pasta de saída):
 ```
 Downloads/
-├── {CODIGO_IMOVEL_1_UPPER}/          ← de 7010920297421.csv
-│   └── {NOME_PARCELA_SANITIZED}/
-│         ├── {NOME_PARCELA}_{UUID}_planta.pdf
-│         ├── {NOME_PARCELA}_{UUID}_memorial.pdf
-│         ├── {NOME_PARCELA}_{UUID}.csv
-│         └── {NOME_PARCELA}_{UUID}.zip
-├── {CODIGO_IMOVEL_2_UPPER}/          ← de 7010920297425.csv
-│   └── {NOME_PARCELA_SANITIZED}/
-│         └── ...
+└── {PASTA_SAIDA}/                       ← nome informado pelo usuário (ex.: Fazenda São João)
+    ├── {CODIGO_IMOVEL_1_UPPER}/         ← de 7010920297421.csv
+    │   └── {NOME_PARCELA_SANITIZED}/
+    │         ├── {NOME_PARCELA}_{UUID}_planta.pdf
+    │         ├── {NOME_PARCELA}_{UUID}_memorial.pdf
+    │         ├── {NOME_PARCELA}_{UUID}.csv
+    │         └── {NOME_PARCELA}_{UUID}.zip
+    └── {CODIGO_IMOVEL_2_UPPER}/         ← de 7010920297425.csv
+        └── {NOME_PARCELA_SANITIZED}/
+              └── ...
 ```
 
 **URLs SIGEF**:
@@ -214,7 +255,7 @@ Downloads/
 | CSV | `https://sigef.incra.gov.br/geo/exportar/parcela/csv/{uuid}/` |
 | SHP | `https://sigef.incra.gov.br/geo/exportar/parcela/shp/{uuid}/` |
 
-**Sanitização**: `sanitize()` em `background.js:63`
+**Sanitização**: `sanitize()` em `background.js:67`
 - Remove acentos (NFD)
 - Capitaliza palavras (exceto preposições)
 - Junta com underscore
@@ -223,14 +264,16 @@ Downloads/
 **Arquivo**: `{pasta_nome}.html` salvo em Downloads
 
 **Recursos**:
-- Leaflet.js v1.9.4 (CDN)
+- Leaflet.js v1.9.4 (empacotada em `lib/`, embutida no HTML — sem CDN)
 - 3 camadas Google: Híbrido, Satellite, Terreno
-- Polígonos coloridos (matiz dourado para distribuição)
-- Popup com: Imóvel, Link SIGEF, Área (ha)
-- Legenda lateral com área total
+- Polígonos coloridos por grupo CCIR (matiz dourado para distribuição; parcelas do mesmo CCIR têm a mesma cor; sem CCIR, cor própria por polígono)
+- Popup com: Imóvel, Link SIGEF, Código CCIR (quando disponível), Área (ha)
+- Legenda lateral com os mesmos dados do popup e área total
 - Cálculo de área: Shoelace + correção latitudinal
 
-**Funções**: `generateMapHtml()` em `popup.js:364`, `calculateAreaHa()` em `popup.js:484`
+**Código CCIR**: extraído do caminho relativo do CSV (`webkitRelativePath`). Se o CSV estiver em `{raiz}/{CODIGO_CCIR}/{PARCELA}/{arquivo}.csv`, onde `{CODIGO_CCIR}` é uma pasta composta apenas por dígitos (ex.: `8010620674820`), o código é exibido no popup e na legenda de cada polígono daquela parcela. Estruturas de pasta sem esse padrão funcionam normalmente, apenas sem o campo CCIR.
+
+**Funções**: `generateMapHtml()` em `popup.js:493`, `calculateAreaHa()` em `popup.js:624`
 
 ---
 
@@ -255,7 +298,7 @@ Downloads/
 - **Timeout**: 45s para carregamento completo
 - **Encerramento**: Aba é fechada ao concluir a fila ou ao pausar/parar no modo extração
 
-#### 4.1.3 Injeção Comportamental (`injectSearchInPage` - `background.js:150`)
+#### 4.1.3 Injeção Comportamental (`injectSearchInPage` - `background.js:177`)
 
 Fluxo completo (com **fases** registradas em `window.__searchPhase` e log por passo em `window.__searchLog`):
 
@@ -305,8 +348,8 @@ injetar → poll de getSearchResult() (1s, até 45s)
    extractParcelasFromPage() → dados | zeroResults | próxima página
 ```
 
-**Funções**: `getSearchResult()`/`getSearchDebug()` em `background.js:542`,
-`checkPageLoaded()` em `background.js:517`, `dumpSearchDebug()` em `background.js:607`
+**Funções**: `getSearchResult()`/`getSearchDebug()` em `background.js:569`,
+`checkPageLoaded()` em `background.js:544`, `dumpSearchDebug()` em `background.js:634`
 
 **Depuração**: `dumpSearchDebug()` despeja fase, URL, `readyState` e as últimas
 linhas de `window.__searchLog` na aba Logs com prefixo `DEBUG[...]`
@@ -338,16 +381,19 @@ table.table tbody tr
 ### 4.2 popup.js - Interface e Lógica de Mapas
 
 #### 4.2.1 Gerenciamento de Abas (UI)
-- 4 abas: Extração, Download, Gerar Mapa, Logs
+- 4 abas: Extração, Download, Map, Logs
 - Estado sincronizado com `chrome.storage.onChanged`
 - Auto-restaura última aba usada
+- **Detector de SW desatualizado**: `checkServiceWorkerVersion()` (`popup.js:78`) — se o
+  Service Worker em execução tem versão diferente da popup (ou não responde à ação `sw_version`
+  em 1,5s), um banner vermelho instrui a recarregar a extensão em `chrome://extensions`
 
 #### 4.2.2 Geração de Mapa (Client-side)
 **Pipeline**:
 1. `FileReader` lê CSVs selecionados
-2. `parseCsvFile()` → detecta colunas → parseia WKT
+2. `parseCsvFile()` → detecta colunas → parseia WKT → extrai código CCIR do `webkitRelativePath` (pasta numérica na posição 1)
 3. `parseWkt()` → POLYGON / MULTIPOLYGON → arrays `[lat, lon]`
-4. `generateColors()` → matiz dourado (phi) + variação S/V
+4. `generateColors()` → matiz dourado (phi) + variação S/V, uma cor por grupo CCIR (polígonos sem CCIR recebem cor própria)
 5. `generateMapHtml()` → template Leaflet + polygons JS
 6. `blobToDataUrl()` → `chrome.downloads.download()`
 
@@ -384,10 +430,11 @@ area_ha = area_km2 * 100
 | `downloads` | Salvar arquivos gerados |
 | `tabs` | Criar/fechar/navegar abas de busca |
 | `scripting` | Injetar automação no DOM SIGEF |
-| `activeTab` | Verificar login na aba ativa |
 | `storage` | Persistir fila, logs, estado |
-| `webNavigation` | Rastrear carregamento de páginas |
 | `host_permissions: sigef.incra.gov.br` | Acesso restrito ao domínio alvo |
+
+Todas as permissões acima são utilizadas ativamente. Removidas na v2.3 (não utilizadas): `webNavigation` e `activeTab`.
+O pacote não contém código hospedado remotamente: todos os scripts são locais (`background.js`, `popup.js`, `content.js`) e o Leaflet é embutido a partir de `lib/` no momento da geração do mapa.
 
 ### 5.2 Tratamento de Erros
 - **Try/Catch** em todas as operações assíncronas (inclusive na cadeia injetada → `reason: chain_error`)
@@ -473,7 +520,7 @@ area_ha = area_km2 * 100
 - [ ] Linha inválida (sem ;)
 - [ ] UUID não encontrado na linha
 
-#### Gerar Mapa
+#### Map (gerar mapa)
 - [ ] Pasta com CSVs válidos (WKT)
 - [ ] POLYGON simples
 - [ ] MULTIPOLYGON
@@ -538,33 +585,42 @@ area_ha = area_km2 * 100
 | UI/Abas | popup.html | 1 |
 | Lógica Popup | popup.js | 1 |
 | Inicialização UI | popup.js | 11 |
-| Iniciar Extração | popup.js | 67 |
-| Iniciar Download (multi-CSV) | popup.js | 94 |
-| Gerar Mapa | popup.js | 228 |
-| Parse CSV/Mapa | popup.js | 289 |
-| Parse WKT | popup.js | 330 |
-| Gerar HTML Mapa | popup.js | 364 |
-| Cálculo Área | popup.js | 484 |
+| Configuração Intervalo | popup.js | 61 |
+| Helpers Pasta de Saída | popup.js | 104 |
+| Detector SW Desatualizado | popup.js | 78 |
+| Iniciar Extração | popup.js | 145 |
+| Iniciar Download (multi-CSV) | popup.js | 179 |
+| Gerar Mapa (aba Map) | popup.js | 329 |
+| Parse CSV/Mapa | popup.js | 390 |
+| Parse WKT | popup.js | 439 |
+| Leaflet Local (embutir) | popup.js | 475 |
+| Gerar HTML Mapa | popup.js | 493 |
+| Cálculo Área | popup.js | 624 |
 | Service Worker | background.js | 1 |
-| Sistema Logs (serializado) | background.js | 9 |
-| Download Seguro | background.js | 44 |
-| Sanitização | background.js | 63 |
-| Formatação Entrada | background.js | 92 |
-| Parse UUID Linha | background.js | 101 |
-| Espera Aba Carregar | background.js | 116 |
-| Injeção Busca (+fases/log) | background.js | 150 |
-| Extração Tabela | background.js | 384 |
-| Verifica Página (DOM completo) | background.js | 517 |
-| Resultado/Debug da Busca | background.js | 540 |
-| Gerencia Aba Extratora | background.js | 574 |
-| Dump DEBUG para logs | background.js | 607 |
-| Listeners Runtime | background.js | 667 |
-| Loop Principal (fila multi-CSV) | background.js | 702 |
-| Lógica Extração | background.js | 772 |
-| Lógica Download | background.js | 1105 |
+| Sistema Logs (serializado) | background.js | 13 |
+| Download Seguro | background.js | 48 |
+| Intervalo Aleatório (min 3s) | background.js | 157 |
+| Sanitização | background.js | 67 |
+| Sanitização Nome da Pasta | background.js | 81 |
+| Formatação Entrada | background.js | 103 |
+| Parse UUID Linha | background.js | 112 |
+| Espera Aba Carregar | background.js | 127 |
+| Injeção Busca (+fases/log) | background.js | 177 |
+| Extração Tabela | background.js | 411 |
+| Verifica Página (DOM completo) | background.js | 544 |
+| Resultado/Debug da Busca | background.js | 569 |
+| Script Seguro da Aba | background.js | 601 |
+| Dump DEBUG para logs | background.js | 634 |
+| CSV Extração (com pasta) | background.js | 661 |
+| Listeners Storage (pausa/para) | background.js | 688 |
+| Listeners Runtime | background.js | 696 |
+| Loop Principal (fila multi-CSV) | background.js | 733 |
+| Lógica Extração | background.js | 807 |
+| Lógica Download | background.js | 1140 |
+| Resposta `sw_version` | background.js | 723 |
 | Content Script | content.js | 1 |
 
 ---
 
-*Documentação atualizada para a versão 2.2*
-*Última atualização: 2026*
+*Documentação atualizada para a versão 2.7*
+*Última atualização: outubro de 2026*

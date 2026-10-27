@@ -9,7 +9,7 @@ Extensão para Google Chrome (**Manifest V3**) que automatiza a extração de da
 | Item | Detalhe |
 |------|---------|
 | Nome | SIGEF Extractor & Downloader |
-| Versão | 2.2 |
+| Versão | 2.7 |
 | Plataforma | Google Chrome / Microsoft Edge |
 | Arquitetura | Manifest V3 (Service Worker) |
 | Autor | Roberto Simões |
@@ -27,15 +27,18 @@ Extrair dados cadastrais de parcelas do SIGEF a partir de códigos de imóvel, C
 **Como funciona:**
 1. O usuário digita códigos/CPF/CNPJ na caixa de texto (um por linha)
 2. Seleciona o tipo de dado (Código, CPF ou CNPJ)
-3. Clica em "EXTRAIR DADOS"
-4. A extensão abre uma aba e, para cada item:
+3. Informa o **nome da pasta de saída** — a extensão cria essa pasta dentro de `Downloads/`
+   (ex.: `Fazenda São João` → `Downloads/Fazenda São João/`). O nome é lembrado para as próximas vezes.
+4. Clica em "EXTRAIR DADOS"
+5. A extensão abre uma aba e, para cada item:
    - digita o valor no campo (`id_sncr` ou `id_cpf_cnpj`) de forma humana
    - **aguarda os atributos `name` e `value` do input ficarem corretos** (o valor muda enquanto digita)
    - espera um **delay aleatório de 3 a 5 segundos** e então clica em **Pesquisar**
      (com *fallback* para `form.requestSubmit()` caso a cadeia de mouse não dispare o envio)
    - aguarda o **DOM completo** (`readyState = complete`) antes de verificar os resultados
    - só então decide: paginação ou próximo item da fila
-5. Gera um arquivo CSV consolidado com todos os dados encontrados
+5. Gera um arquivo CSV consolidado com todos os dados encontrados, salvo em
+   `Downloads/{PASTA_SAIDA}/{CODIGO}.csv`
 
 **Robustez e diagnóstico:**
 - Retries de busca (3 tentativas) com recarga da página
@@ -71,44 +74,51 @@ Baixar documentos oficiais do SIGEF (PDF, CSV, Shapefile) em lote, organizados p
 **Como funciona:**
 1. Seleciona **um ou mais arquivos CSV** das parcelas (botão permite múltipla seleção)
 2. Marca os tipos de arquivo desejados (PDF, CSV, SHP)
-3. Clica em "INICIAR DOWNLOAD"
-4. Todos os CSVs são adicionados **em fila** e baixados **um a um**, cada um em **sua própria pasta**
-   (o nome da pasta é o nome do arquivo CSV, sem a extensão)
+3. Define o **máximo** do intervalo entre downloads — o **mínimo é fixo em 3 segundos**;
+   a espera é sorteada entre os dois **para evitar sobrecarga do servidor ou bloqueio**
+4. Informa o **nome da pasta de saída** (o mesmo da extração é sugerido automaticamente e pode ser editado)
+5. Clica em "INICIAR DOWNLOAD"
+6. Todos os CSVs são adicionados **em fila** e baixados **um a um**, cada um em **sua própria subpasta**
+   dentro da pasta de saída (o nome da subpasta é o nome do arquivo CSV, sem a extensão)
 
 **Estrutura de pastas gerada:**
 ```
 Downloads/
-├── 7010920297421/            ← pasta do arquivo 7010920297421.csv
-│   └── Nome_Parcela/
-│         ├── Nome_Parcela_UUID_planta.pdf
-│         ├── Nome_Parcela_UUID_memorial.pdf
-│         ├── Nome_Parcela_UUID.csv
-│         └── Nome_Parcela_UUID.zip
-├── 7010920297425/            ← pasta do arquivo 7010920297425.csv
-│   └── Nome_Parcela/
-│         └── ...
-└── ...
+└── Fazenda São João/             ← pasta de saída informada pelo usuário
+    ├── 7010920297421/            ← pasta do arquivo 7010920297421.csv
+    │   └── Nome_Parcela/
+    │         ├── Nome_Parcela_UUID_planta.pdf
+    │         ├── Nome_Parcela_UUID_memorial.pdf
+    │         ├── Nome_Parcela_UUID.csv
+    │         └── Nome_Parcela_UUID.zip
+    └── 7010920297425/            ← pasta do arquivo 7010920297425.csv
+        └── Nome_Parcela/
+              └── ...
 ```
 
 ---
 
-### 3. Geração de Mapa Interativo
+### 3. Geração de Mapa Interativo (aba "Map")
 
 Criar um mapa HTML interativo a partir de arquivos CSV com polígonos WKT.
 
-![Aba Gerar Mapa](assets/gerar_mapa.svg)
+![Aba Map](assets/gerar_mapa.svg)
 
 **Como funciona:**
-1. Seleciona a pasta raiz contendo os arquivos CSV
-2. A extensão processa recursivamente todos os `.csv`
-3. Detecta automaticamente colunas WKT/GEOMETRIA/GEOMETRY
-4. Gera um mapa HTML com:
-   - Polígonos coloridos por imóvel
+1. A aba exibe a **pasta de saída** gravada na extração (ex.: `Pasta de saida: AMANDA SOUZA RODRIGUES`)
+   — selecione essa mesma pasta (dentro de `Downloads`) ao escolher a pasta com CSVs
+2. Seleciona a pasta raiz contendo os arquivos CSV
+3. A extensão processa recursivamente todos os `.csv`
+4. Detecta automaticamente colunas WKT/GEOMETRIA/GEOMETRY
+5. Gera um mapa HTML com:
+   - Polígonos coloridos por código CCIR (parcelas do mesmo CCIR compartilham a mesma cor)
    - Camadas Google Maps (Híbrido, Satélite, Terreno)
-   - Legenda com nome, link SIGEF e área em hectares
+   - Popup e legenda com nome, link SIGEF, código CCIR e área em hectares
    - Área total calculada automaticamente
 
-![Aba Gerar Mapa](assets/mapa_gerado.svg)
+> **CCIR**: se a pasta raiz contiver pastas com o código CCIR (ex.: `8010620674820/`), cada parcela dentro delas exibirá o código do CCIR no popup e na legenda.
+
+![Mapa gerado](assets/mapa_gerado.svg)
 
 ---
 
@@ -156,6 +166,18 @@ Registro completo de todas as operações realizadas.
 2. Gerar mapa HTML interativo
 3. Abrir resultado no navegador
 
+### Empacotamento (publicação na Chrome Web Store)
+
+Para gerar o ZIP de publicação a partir da versão atual do `manifest.json`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\pack.ps1
+```
+
+O script monta o pacote em `dist/sigef-extractor-v{versão}.zip` apenas com os arquivos
+necessários (manifest, scripts, `icons/`, `lib/` e LICENSE) e lista o conteúdo gerado.
+A pasta `dist/` não é versionada pelo Git.
+
 ---
 
 ## Pré-requisitos
@@ -173,9 +195,10 @@ Registro completo de todas as operações realizadas.
 | `downloads` | Salvar arquivos e relatórios |
 | `tabs` | Criar, fechar e navegar abas |
 | `scripting` | Injetar scripts de automação |
-| `activeTab` | Verificar status de login |
 | `storage` | Persistir fila e estado |
-| `webNavigation` | Rastrear carregamento de páginas |
+| `host_permissions: sigef.incra.gov.br` | Acesso restrito ao domínio do SIGEF (automação) |
+
+Todas as permissões declaradas são utilizadas ativamente pelo código. A extensão não carrega scripts de servidores externos (código 100% empacotado, conforme políticas do Manifest V3).
 
 ---
 
@@ -195,7 +218,15 @@ Downloader/
 │   ├── icon32.png         # Ícone 32x32
 │   ├── icon48.png         # Ícone 48x48
 │   └── icon128.png        # Ícone 128x128
+├── lib/                   # Bibliotecas locais (sem CDN)
+│   ├── leaflet.js         # Leaflet 1.9.4 embutido no HTML gerado
+│   └── leaflet.css        # Estilos do Leaflet embutidos no HTML gerado
 ├── assets/                # Imagens deste README (telas, diagramas)
+├── scripts/               # Scripts de automação
+│   └── pack.ps1           # Gera o ZIP da Chrome Web Store em dist/
+├── dist/                  # ZIPs de publicação (gerado, não versionado)
+├── .gitattributes         # Marca PNGs como binários (evita corrupção por CRLF)
+├── .gitignore             # Arquivos ignorados pelo Git (dist/, editores, SO)
 ├── README.md              # Esta documentação
 ├── DOCUMENTACAO_TECNICA.md # Documentação técnica detalhada
 └── LICENSE                # Licença
@@ -221,7 +252,7 @@ Downloader/
 | JavaScript ES2020+ | Linguagem principal |
 | Chrome Extensions API v3 | Plataforma |
 | HTML/CSS | Interface do usuário |
-| Leaflet.js | Mapas interativos |
+| Leaflet.js | Mapas interativos (empacotado localmente em `lib/`, sem CDN) |
 | API Google Maps | Camadas de mapas |
 
 ---
@@ -235,6 +266,19 @@ Downloader/
 - **Persistência**: Estado sobrevive ao fechamento do popup
 - **Segurança**: Permissões mínimas necessárias
 - **Organização**: Estrutura de pastas automática (um CSV = uma pasta)
+
+---
+
+## Solução de Problemas
+
+- **Banner vermelho "Codigo desatualizado em execucao"** no topo da extensão: a popup está
+  atualizada, mas o Service Worker em execução é antigo (comum após editar/instalar versão nova).
+  Clique no ícone de recarregar em `chrome://extensions` e reabra o popup. O banner some sozinho
+  quando as versões coincidem.
+- **Arquivos não aparecem na pasta de saída**: confira a aba **Logs** — toda extração/download
+  registra a linha `pasta=...` e cada arquivo com o caminho completo
+  (`Baixando CSV: PASTA/CODIGO/...`). A pasta em `Downloads/` é criada automaticamente pelo
+  Chrome no primeiro arquivo salvo; ela não existe antes disso.
 
 ---
 
@@ -256,4 +300,4 @@ Desenvolvido por **Roberto Simões**
 
 ---
 
-*SIGEF Extractor & Downloader v2.1 — Copyright © 2026 Roberto Simões*
+*SIGEF Extractor & Downloader v2.7 — Copyright © 2026 Roberto Simões*
