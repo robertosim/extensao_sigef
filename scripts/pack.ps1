@@ -18,6 +18,7 @@ foreach ($f in $files) {
     Copy-Item -LiteralPath $src -Destination $stage
 }
 Copy-Item -LiteralPath (Join-Path $root 'icons') -Destination (Join-Path $stage 'icons') -Recurse
+Copy-Item -LiteralPath (Join-Path $root 'lib') -Destination (Join-Path $stage 'lib') -Recurse
 
 $zip = Join-Path $dist "sigef-extractor-v$version.zip"
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }

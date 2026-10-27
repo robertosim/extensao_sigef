@@ -26,7 +26,15 @@
         .radio-group input[type="radio"],
         .radio-group input[type="checkbox"] { cursor: pointer; }
 
+        .interval-group { display: flex; gap: 10px; margin: 8px 0; }
+        .interval-group > div { flex: 1; }
+        .interval-group label { font-weight: normal; font-size: 12px; color: #555; display: block; margin-bottom: 3px; }
+        .interval-group input[type="number"] { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 5px; font-size: 13px; box-sizing: border-box; }
+        .interval-group input[readonly] { background: #eee; color: #666; cursor: not-allowed; }
+        .interval-hint { font-size: 11px; color: #888; margin: 4px 0 8px; }
+
         input[type="file"] { width: 100%; font-size: 12px; margin: 6px 0; }
+        input[type="text"] { width: 100%; border: 1px solid #ccc; border-radius: 5px; padding: 8px; font-size: 13px; box-sizing: border-box; margin-top: 4px; }
 
         .btn-row { display: flex; gap: 8px; margin-top: 10px; }
         button { flex: 1; padding: 10px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 13px; }
@@ -60,11 +68,13 @@
     <div class="card">
         <h3>SIGEF Extractor & Downloader</h3>
 
+        <div id="staleWarning" style="display:none;background:#dc3545;color:#fff;padding:8px 10px;border-radius:5px;font-size:12px;font-weight:bold;margin-bottom:10px;"></div>
+
         <!-- Abas -->
         <div class="tabs">
             <div class="tab active" data-tab="extract">Extracao</div>
             <div class="tab" data-tab="download">Download</div>
-            <div class="tab" data-tab="generatemap">Gerar Mapa</div>
+            <div class="tab" data-tab="generatemap">Map</div>
             <div class="tab" data-tab="logs">Logs</div>
         </div>
 
@@ -78,6 +88,9 @@
                 <label><input type="radio" name="dataType" value="cpf"> CPF</label>
                 <label><input type="radio" name="dataType" value="cnpj"> CNPJ</label>
             </div>
+
+            <label for="extractOutputFolder">Pasta de saida (criada em Downloads):</label>
+            <input type="text" id="extractOutputFolder" maxlength="80" placeholder="Ex.: Fazenda São João">
 
             <div class="btn-row">
                 <button id="extractBtn" class="btn-primary">EXTRAIR DADOS</button>
@@ -95,18 +108,35 @@
                 <label><input type="checkbox" id="chkShp"> SHP</label>
             </div>
 
+            <div class="section-title">Intervalo entre downloads (segundos)</div>
+            <div class="interval-group">
+                <div>
+                    <label for="intervalMin">Mínimo (fixo: 3s)</label>
+                    <input type="number" id="intervalMin" value="3" readonly title="Mínimo fixo em 3 segundos">
+                </div>
+                <div>
+                    <label for="intervalMax">Máximo</label>
+                    <input type="number" id="intervalMax" min="3" step="1" value="10">
+                </div>
+            </div>
+            <div class="interval-hint">Após cada download, aguarda um tempo entre o mínimo e o máximo, para evitar sobrecarga do servidor ou bloqueio.</div>
+
+            <label for="downloadOutputFolder">Pasta de saida (criada em Downloads):</label>
+            <input type="text" id="downloadOutputFolder" maxlength="80" placeholder="Ex.: Fazenda São João">
+
             <div class="btn-row">
                 <button id="downloadBtn" class="btn-primary">INICIAR DOWNLOAD</button>
             </div>
         </div>
 
-        <!-- Conteudo Aba Gerar Mapa -->
+        <!-- Conteudo Aba Map -->
         <div id="tab-generatemap" class="tab-content">
             <label for="folderInput">Pasta com arquivos CSV:</label>
             <input type="file" id="folderInput" webkitdirectory directory multiple>
             <p style="font-size:11px;color:#888;margin:4px 0 8px;">
                 Selecione a pasta raiz. Todos os .csv (incluindo subpastas) serao processados.
             </p>
+            <p id="mapOutputFolderInfo" style="font-size:11px;color:#007bff;margin:4px 0 8px;font-weight:bold;"></p>
 
             <div class="btn-row">
                 <button id="generateMapBtn" class="btn-primary">GERAR MAPA</button>
@@ -138,6 +168,7 @@
         </div>
     </div>
     <div class="footer">
+        <span id="ext-version"></span><br>
         Copyright &copy; 2026 - Roberto Sim&otilde;es<br>
         <a href="mailto:robsimoes@gmail.com">E-mail</a> | <a href="https://wa.me/5548996793828" target="_blank">WhatsApp</a>
     </div>

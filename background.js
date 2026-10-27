@@ -2,6 +2,10 @@ const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
 const PARCELAS_URL = "https://sigef.incra.gov.br/consultar/parcelas";
 
+try {
+    console.log(`[SIGEF Downloader] Service Worker iniciado (v${chrome.runtime.getManifest().version})`);
+} catch (_) { }
+
 const MAX_LOGS = 2000;
 
 let logChain = Promise.resolve();
@@ -74,6 +78,13 @@ function sanitize(text) {
         .join('_');
 }
 
+function sanitizeFolderName(name) {
+    return (name || '')
+        .replace(/[\\/:*?"<>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 function formatCodigo(value) {
     const digits = value.replace(/\D/g, '');
     return digits.padStart(13, '0');
@@ -141,6 +152,22 @@ function isNoTabError(err) {
 
 function randomDelayMs(minMs, maxMs) {
     return Math.floor(minMs + Math.random() * (maxMs - minMs + 1));
+}
+
+async function getRandomDownloadDelayMs() {
+    const { downloadIntervalMax } = await chrome.storage.local.get([
+        "downloadIntervalMax"
+    ]);
+    const min = 3;
+    let max = Number(downloadIntervalMax);
+    if (!Number.isFinite(max) || max < min) max = 10;
+    return randomDelayMs(min * 1000, max * 1000);
+}
+
+async function waitRandomDownloadInterval() {
+    const waitMs = await getRandomDownloadDelayMs();
+    log(`Aguardando ${(waitMs / 1000).toFixed(1)}s antes do proximo download...`);
+    await delay(waitMs);
 }
 
 /* ===========================
@@ -631,7 +658,7 @@ async function dumpSearchDebug(tabRef, dataType, formattedValue, label, full = t
     }
 }
 
-async function downloadExtractCsvBlob(folderName, csvContent) {
+async function downloadExtractCsvBlob(folderName, csvContent, outputFolder) {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
     const base64 = await new Promise((resolve) => {
         const reader = new FileReader();
@@ -639,8 +666,10 @@ async function downloadExtractCsvBlob(folderName, csvContent) {
         reader.readAsDataURL(blob);
     });
     const fileNameUpper = folderName.toUpperCase();
-    log(`Baixando CSV extraido: ${fileNameUpper}.csv`);
-    await safeDownload({ url: base64, filename: `${fileNameUpper}.csv` });
+    const root = sanitizeFolderName(outputFolder);
+    const filename = root ? `${root}/${fileNameUpper}.csv` : `${fileNameUpper}.csv`;
+    log(`Baixando CSV extraido: ${filename}`);
+    await safeDownload({ url: base64, filename });
     await delay(500);
 }
 
@@ -691,6 +720,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ ok: true });
         });
         return true;
+    } else if (msg.action === "sw_version") {
+        sendResponse({ version: chrome.runtime.getManifest().version });
     }
     return true;
 });
@@ -700,11 +731,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
    =========================== */
 
 async function processQueue() {
-    let { queue, currentIndex, mode, dataType, codigoImovel, downloadTypes } = await chrome.storage.local.get([
-        "queue", "currentIndex", "mode", "dataType", "codigoImovel", "downloadTypes"
+    let { queue, currentIndex, mode, dataType, codigoImovel, downloadTypes, outputFolder } = await chrome.storage.local.get([
+        "queue", "currentIndex", "mode", "dataType", "codigoImovel", "downloadTypes", "outputFolder"
     ]);
+    outputFolder = sanitizeFolderName(outputFolder);
 
-    log(`Iniciando processQueue: mode=${mode}, dataType=${dataType}, types=${downloadTypes}, total=${queue.length}, start=${currentIndex}`);
+    if (!outputFolder) {
+        logWarn('Pasta de saida vazia - salvando na RAIZ de Downloads! (recarregue a extensao em chrome://extensions se o popup tem o campo da pasta)');
+    }
+    log(`Iniciando processQueue: mode=${mode}, dataType=${dataType}, types=${downloadTypes}, total=${queue.length}, start=${currentIndex}, pasta=${outputFolder || "(raiz Downloads)"}`);
 
     while (currentIndex < queue.length) {
         const status = await chrome.storage.local.get(["isPaused", "isProcessing"]);
@@ -739,9 +774,9 @@ async function processQueue() {
 
         try {
             if (mode === 'extract') {
-                await executeExtractorLogic(currentLine, formatted, currentLine.trim(), dataType);
+                await executeExtractorLogic(currentLine, formatted, currentLine.trim(), dataType, outputFolder);
             } else if (mode === 'download') {
-                await executeDownloadLogic(currentLine, currentCodigoImovel, downloadTypes);
+                await executeDownloadLogic(currentLine, currentCodigoImovel, downloadTypes, outputFolder);
             }
 
             logSuccess(`[${currentIndex + 1}/${queue.length}] Concluido: ${nomeParcela}`);
@@ -769,7 +804,7 @@ async function processQueue() {
    MODO: EXTRAIR DADOS
    =========================== */
 
-async function executeExtractorLogic(rawValue, formattedValue, folderName, dataType) {
+async function executeExtractorLogic(rawValue, formattedValue, folderName, dataType, outputFolder) {
     log(`Iniciando extracao para: ${rawValue} (formatado: ${formattedValue})`);
     const { extractorTabId: savedId } = await chrome.storage.local.get(["extractorTabId"]);
     const tabRef = { id: savedId || null };
@@ -1082,9 +1117,11 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
         const csvContent = csvHeader +
             deduped.map(d => `"${d.nome}";"${d.codigo}";"${d.area}";"${d.detentor}";"${d.cns}";"${d.matricula}"`).join("\n");
 
-        log(`Gerando CSV para: ${folderName}.csv`);
-        await downloadExtractCsvBlob(folderName, csvContent);
-        logSuccess(`CSV baixado: ${folderName}.csv`);
+        const root = sanitizeFolderName(outputFolder);
+        const rootPrefix = root ? `${root}/` : '';
+        log(`Gerando CSV para: ${rootPrefix}${folderName}.csv`);
+        await downloadExtractCsvBlob(folderName, csvContent, outputFolder);
+        logSuccess(`CSV baixado: ${rootPrefix}${folderName}.csv`);
     } else if (searchHadZeroResults) {
         logWarn(`Busca sem resultados (0) - CSV de ${folderName} NAO sera baixado`);
     }
@@ -1100,7 +1137,7 @@ async function executeExtractorLogic(rawValue, formattedValue, folderName, dataT
    MODO: DOWNLOAD UNIFICADO
    =========================== */
 
-async function executeDownloadLogic(line, folderName, downloadTypes) {
+async function executeDownloadLogic(line, folderName, downloadTypes, outputFolder) {
     const parts = line.split(';');
     if (parts.length < 2) {
         logWarn(`Linha invalida (sem ;): ${line}`);
@@ -1116,6 +1153,8 @@ async function executeDownloadLogic(line, folderName, downloadTypes) {
 
     const nomeLimpo = sanitize(nomeParcela).toUpperCase();
     const folderNameUpper = folderName.toUpperCase();
+    const outputRoot = sanitizeFolderName(outputFolder);
+    const baseFolder = outputRoot ? `${outputRoot}/${folderNameUpper}` : folderNameUpper;
     log(`Processando download: ${nomeParcela} (UUID: ${uuid}) | Tipos: ${downloadTypes.join(', ')}`);
 
     if (downloadTypes.includes('pdf')) {
@@ -1125,40 +1164,40 @@ async function executeDownloadLogic(line, folderName, downloadTypes) {
         ];
         for (const doc of docs) {
             try {
-                const filename = `${folderNameUpper}/${nomeLimpo}/${nomeLimpo}_${uuid}_${doc.type}.pdf`;
+                const filename = `${baseFolder}/${nomeLimpo}/${nomeLimpo}_${uuid}_${doc.type}.pdf`;
                 log(`Baixando ${doc.type}: ${filename}`);
                 await safeDownload({ url: doc.uri, filename, conflictAction: "overwrite" });
                 logSuccess(`Download concluido: ${doc.type}`);
             } catch (err) {
                 logError(`Erro ao baixar ${doc.type} de ${nomeParcela}`, err);
             }
-            await delay(randomDelayMs(1000, 2500));
+            await waitRandomDownloadInterval();
         }
     }
 
     if (downloadTypes.includes('csv')) {
         try {
             const csvUrl = `https://sigef.incra.gov.br/geo/exportar/parcela/csv/${uuid}/`;
-                const filename = `${folderNameUpper}/${nomeLimpo}/${nomeLimpo}_${uuid}.csv`;
+                const filename = `${baseFolder}/${nomeLimpo}/${nomeLimpo}_${uuid}.csv`;
             log(`Baixando CSV: ${filename}`);
             await safeDownload({ url: csvUrl, filename, conflictAction: "overwrite" });
             logSuccess('Download CSV concluido');
         } catch (err) {
             logError(`Erro ao baixar CSV de ${nomeParcela}`, err);
         }
+        await waitRandomDownloadInterval();
     }
 
     if (downloadTypes.includes('shp')) {
         try {
             const shpUrl = `https://sigef.incra.gov.br/geo/exportar/parcela/shp/${uuid}/`;
-                const filename = `${folderNameUpper}/${nomeLimpo}/${nomeLimpo}_${uuid}.zip`;
+                const filename = `${baseFolder}/${nomeLimpo}/${nomeLimpo}_${uuid}.zip`;
             log(`Baixando SHP: ${filename}`);
             await safeDownload({ url: shpUrl, filename, conflictAction: "overwrite" });
             logSuccess('Download SHP concluido');
         } catch (err) {
             logError(`Erro ao baixar SHP de ${nomeParcela}`, err);
         }
+        await waitRandomDownloadInterval();
     }
-
-    await delay(randomDelayMs(500, 1000));
 }

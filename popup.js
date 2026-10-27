@@ -13,6 +13,7 @@ async function updateUI() {
         'queue', 'currentIndex', 'isProcessing', 'isPaused',
         'currentParcelaNome', 'statusDetail', 'mode'
     ]);
+    loadOutputFolderSetting();
 
     const tabsEl = document.querySelector('.tabs');
     const tabExtract = document.getElementById('tab-extract');
@@ -57,12 +58,89 @@ async function updateUI() {
     }
 }
 
+async function loadIntervalSettings() {
+    const { downloadIntervalMax } = await chrome.storage.local.get([
+        'downloadIntervalMax'
+    ]);
+    if (Number.isFinite(downloadIntervalMax) && downloadIntervalMax >= MIN_DOWNLOAD_INTERVAL) {
+        document.getElementById('intervalMax').value = downloadIntervalMax;
+    }
+}
+
 chrome.storage.onChanged.addListener(() => {
+    loadIntervalSettings();
     updateUI();
     if (document.querySelector('.tab[data-tab="logs"]').classList.contains('active')) {
         loadLogs();
     }
 });
+
+async function checkServiceWorkerVersion() {
+    try {
+        const myVersion = chrome.runtime.getManifest().version;
+        const res = await Promise.race([
+            new Promise(resolve => {
+                try {
+                    chrome.runtime.sendMessage({ action: 'sw_version' }, r => resolve(r));
+                } catch (_) { resolve(null); }
+            }),
+            new Promise(resolve => setTimeout(() => resolve(null), 1500))
+        ]);
+        const swVersion = res && res.version;
+        const banner = document.getElementById('staleWarning');
+        if (!banner) return;
+        if (swVersion === myVersion) {
+            banner.style.display = 'none';
+            banner.textContent = '';
+        } else {
+            banner.style.display = 'block';
+            banner.textContent = swVersion
+                ? `Codigo desatualizado em execucao: popup v${myVersion} x Service Worker v${swVersion}. Recarregue a extensao em chrome://extensions (icone de recarregar).`
+                : `O Service Worker nao respondeu. Recarregue a extensao em chrome://extensions (icone de recarregar).`;
+        }
+    } catch (_) { }
+}
+
+function sanitizeFolderName(name) {
+    return (name || '')
+        .replace(/[\\/:*?"<>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+const MIN_DOWNLOAD_INTERVAL = 3;
+
+try {
+    const versionEl = document.getElementById('ext-version');
+    if (versionEl) versionEl.textContent = `v${chrome.runtime.getManifest().version}`;
+} catch (_) { }
+
+function readOutputFolderInput(inputId) {
+    const input = document.getElementById(inputId);
+    return sanitizeFolderName(input ? input.value : '');
+}
+
+function syncOutputFolderInputs(value) {
+    const extractInput = document.getElementById('extractOutputFolder');
+    const downloadInput = document.getElementById('downloadOutputFolder');
+    if (extractInput) extractInput.value = value;
+    if (downloadInput) downloadInput.value = value;
+}
+
+async function loadOutputFolderSetting() {
+    const { outputFolder } = await chrome.storage.local.get(['outputFolder']);
+    const value = sanitizeFolderName(outputFolder);
+    const extractInput = document.getElementById('extractOutputFolder');
+    const downloadInput = document.getElementById('downloadOutputFolder');
+    if (extractInput && document.activeElement !== extractInput) extractInput.value = value;
+    if (downloadInput && document.activeElement !== downloadInput) downloadInput.value = value;
+    const mapInfo = document.getElementById('mapOutputFolderInfo');
+    if (mapInfo) {
+        mapInfo.textContent = value
+            ? `Pasta de saida: ${value} - selecione essa pasta (em Downloads) ao gerar o mapa.`
+            : 'Pasta de saida nao definida. Extraia os dados para saber qual pasta usar no mapa.';
+    }
+}
 
 async function startExtract() {
     const textarea = document.getElementById('dataInput');
@@ -77,6 +155,12 @@ async function startExtract() {
         return alert('Selecione o tipo de dado: Codigo, CPF ou CNPJ.');
     }
 
+    const outputFolder = readOutputFolderInput('extractOutputFolder');
+    if (!outputFolder) {
+        return alert('Informe o nome da pasta onde os arquivos serao salvos.');
+    }
+    syncOutputFolderInputs(outputFolder);
+
     await chrome.storage.local.set({
         queue: lines,
         currentIndex: 0,
@@ -84,6 +168,7 @@ async function startExtract() {
         isPaused: false,
         mode: 'extract',
         dataType: radio.value,
+        outputFolder: outputFolder,
         currentParcelaNome: 'Iniciando...',
         statusDetail: ''
     });
@@ -103,6 +188,13 @@ async function startDownload() {
 
     if (!chkPdf && !chkCsv && !chkShp) {
         return alert('Selecione pelo menos um tipo de arquivo: PDF, CSV ou SHP.');
+    }
+
+    const intervalMin = MIN_DOWNLOAD_INTERVAL;
+    const intervalMax = parseInt(document.getElementById('intervalMax').value, 10);
+
+    if (!Number.isFinite(intervalMax) || intervalMax < MIN_DOWNLOAD_INTERVAL) {
+        return alert(`Informe um intervalo maximo valido em segundos (minimo permitido: ${MIN_DOWNLOAD_INTERVAL}).`);
     }
 
     const downloadTypes = [];
@@ -141,6 +233,12 @@ async function startDownload() {
         return alert('Nenhum dado válido encontrado nos arquivos CSV selecionados.');
     }
 
+    const outputFolder = readOutputFolderInput('downloadOutputFolder');
+    if (!outputFolder) {
+        return alert('Informe o nome da pasta onde os arquivos serao salvos.');
+    }
+    syncOutputFolderInputs(outputFolder);
+
     await chrome.storage.local.set({
         queue: allQueueItems,
         currentIndex: 0,
@@ -148,7 +246,10 @@ async function startDownload() {
         isPaused: false,
         mode: 'download',
         downloadTypes: downloadTypes,
+        downloadIntervalMin: intervalMin,
+        downloadIntervalMax: intervalMax,
         dataType: 'csv_file',
+        outputFolder: outputFolder,
         currentParcelaNome: 'Iniciando...',
         statusDetail: ''
     });
@@ -248,7 +349,7 @@ async function startGenerateMap() {
     for (const file of files) {
         try {
             const text = await file.text();
-            const polygons = parseCsvFile(text, file.name);
+            const polygons = parseCsvFile(text, file.name, file.webkitRelativePath);
             if (polygons.length > 0) {
                 allPolygons.push(...polygons);
                 logs.push(`${file.name}: ${polygons.length} poligono(s)`);
@@ -264,7 +365,7 @@ async function startGenerateMap() {
         return alert('Nenhum poligono WKT encontrado nos arquivos CSV.\n\n' + logs.join('\n'));
     }
 
-    const html = generateMapHtml(allPolygons, folderName);
+    const html = await generateMapHtml(allPolygons, folderName);
 
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const dataUrl = await blobToDataUrl(blob);
@@ -286,7 +387,7 @@ async function startGenerateMap() {
     });
 }
 
-function parseCsvFile(text, fileName) {
+function parseCsvFile(text, fileName, relativePath) {
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     if (lines.length < 2) return [];
 
@@ -307,6 +408,14 @@ function parseCsvFile(text, fileName) {
 
     if (wktColIdx === -1) return [];
 
+    let ccir = '';
+    if (relativePath) {
+        const segments = relativePath.split('/');
+        if (segments.length >= 3 && /^\d+$/.test(segments[1])) {
+            ccir = segments[1];
+        }
+    }
+
     const polygons = [];
     const label = fileName.replace(/\.csv$/i, '').replace(/_/g, ' ');
 
@@ -321,7 +430,7 @@ function parseCsvFile(text, fileName) {
         const qrcode = qrcodeColIdx >= 0 ? cols[qrcodeColIdx] : '';
         const nome = nomeColIdx >= 0 ? cols[nomeColIdx] : label;
 
-        polygons.push({ name: label, coords, qrcode, nome });
+        polygons.push({ name: label, coords, qrcode, nome, ccir });
     }
 
     return polygons;
@@ -361,7 +470,27 @@ function parseCoordRing(ringStr) {
     }).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
 }
 
-function generateMapHtml(polygons, folderName) {
+let leafletAssetsPromise = null;
+
+function loadLeafletAssets() {
+    if (!leafletAssetsPromise) {
+        leafletAssetsPromise = Promise.all([
+            fetch(chrome.runtime.getURL('lib/leaflet.css')),
+            fetch(chrome.runtime.getURL('lib/leaflet.js'))
+        ]).then(([cssRes, jsRes]) => {
+            if (!cssRes.ok || !jsRes.ok) {
+                throw new Error('Falha ao carregar Leaflet local (lib/).');
+            }
+            return Promise.all([cssRes.text(), jsRes.text()]);
+        }).then(([css, js]) => ({
+            css,
+            js: js.replace(/<\/script/gi, '<\\/script')
+        }));
+    }
+    return leafletAssetsPromise;
+}
+
+async function generateMapHtml(polygons, folderName) {
     let allLats = [], allLons = [];
     for (const p of polygons) {
         for (const ring of p.coords) {
@@ -374,14 +503,19 @@ function generateMapHtml(polygons, folderName) {
     const centerLat = allLats.reduce((a, b) => a + b, 0) / allLats.length;
     const centerLon = allLons.reduce((a, b) => a + b, 0) / allLons.length;
 
-    const colors = generateColors(polygons.length);
+    const groupIndex = new Map();
+    polygons.forEach((p, i) => {
+        const key = p.ccir || `__sem_ccir_${i}`;
+        if (!groupIndex.has(key)) groupIndex.set(key, groupIndex.size);
+    });
+    const colors = generateColors(groupIndex.size);
 
     let polygonsJs = '';
     let legendItems = '';
     let totalArea = 0;
 
     polygons.forEach((p, i) => {
-        const color = colors[i];
+        const color = colors[groupIndex.get(p.ccir || `__sem_ccir_${i}`)];
         const ringsJs = p.coords.map(ring =>
             `[${ring.map(([lat, lon]) => `[${lat},${lon}]`).join(',')}]`
         ).join(',');
@@ -392,20 +526,24 @@ function generateMapHtml(polygons, folderName) {
 
         const nomeSafe = p.nome.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const qrcodeSafe = (p.qrcode || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const ccirSafe = (p.ccir || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const sigefLink = p.qrcode
             ? `<a href="https://sigef.incra.gov.br/geo/parcela/detalhe/${qrcodeSafe}" target="_blank">${qrcodeSafe}</a>`
             : qrcodeSafe;
+        const ccirPopup = p.ccir ? `<br><b>CCIR:</b> ${ccirSafe}` : '';
 
-        polygonsJs += `L.polygon([${ringsJs}],{color:'${color}',weight:3,fillColor:'${color}',fillOpacity:0.4}).addTo(map).bindPopup('<b>Imovel:</b> ${nomeSafe}<br><b>SIGEF:</b> ${sigefLink}<br><b>Area:</b> ${areaFmt}');\n`;
+        polygonsJs += `L.polygon([${ringsJs}],{color:'${color}',weight:3,fillColor:'${color}',fillOpacity:0.4}).addTo(map).bindPopup('<b>Imovel:</b> ${nomeSafe}<br><b>SIGEF:</b> ${sigefLink}${ccirPopup}<br><b>Area:</b> ${areaFmt}');\n`;
 
         const sigefUrl = p.qrcode
             ? `<a href="https://sigef.incra.gov.br/geo/parcela/detalhe/${qrcodeSafe}" target="_blank">${qrcodeSafe}</a>`
             : '';
+        const ccirLegend = p.ccir ? `<br>&nbsp;&nbsp;&nbsp;&nbsp;<b>CCIR:</b> ${ccirSafe}` : '';
 
-        legendItems += `<li style="margin-bottom:6px;"><span style="background:${color};width:12px;height:12px;display:inline-block;margin-right:5px;border:1px solid black;vertical-align:middle;"></span><b>Imovel:</b> ${nomeSafe}<br>&nbsp;&nbsp;&nbsp;&nbsp;<b>SIGEF:</b> ${sigefUrl}<br>&nbsp;&nbsp;&nbsp;&nbsp;<b>Area:</b> ${areaFmt}</li>`;
+        legendItems += `<li style="margin-bottom:6px;"><span style="background:${color};width:12px;height:12px;display:inline-block;margin-right:5px;border:1px solid black;vertical-align:middle;"></span><b>Imovel:</b> ${nomeSafe}<br>&nbsp;&nbsp;&nbsp;&nbsp;<b>SIGEF:</b> ${sigefUrl}${ccirLegend}<br>&nbsp;&nbsp;&nbsp;&nbsp;<b>Area:</b> ${areaFmt}</li>`;
     });
 
     const totalFmt = formatArea(totalArea);
+    const leaflet = await loadLeafletAssets();
 
     return `<!DOCTYPE html>
 <html>
@@ -413,8 +551,9 @@ function generateMapHtml(polygons, folderName) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${folderName}</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
+<style>
+${leaflet.css}
+</style>
 <style>
 body{margin:0;padding:0;}
 #map{width:100%;height:100vh;}
@@ -424,6 +563,7 @@ body{margin:0;padding:0;}
 <body>
 <div id="map"></div>
 <script>
+${leaflet.js}
 var map=L.map('map').setView([${centerLat},${centerLon}],14);
 L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',{attribution:'Google Maps',maxZoom:22}).addTo(map);
 ${polygonsJs}
@@ -512,4 +652,6 @@ function blobToDataUrl(blob) {
     });
 }
 
+loadIntervalSettings();
 updateUI();
+checkServiceWorkerVersion();
